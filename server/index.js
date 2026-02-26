@@ -6,8 +6,10 @@ import mongoose from 'mongoose';
 import authRoutes from './routes/auth.js';
 import verifyToken from './middleware/verifyToken.js';
 import Product from './models/Product.js';
+import User from './models/User.js';
 import { gradeProduct } from './engine/gradingEngine.js';
 import { generateProducts, getSignalStrength } from './engine/productGenerator.js';
+import { resetDailyQuotaIfNeeded } from './utils/quotaUtils.js';
 
 const app = express();
 app.use(cors());
@@ -138,7 +140,7 @@ app.get('/api/trends', (req, res) => {
 });
 
 // ---- Dynamic Product Analysis (AI-Simulated) ----
-app.post('/api/products/analyze', verifyToken, (req, res) => {
+app.post('/api/products/analyze', verifyToken, async (req, res) => {
     try {
         const { keyword } = req.body;
 
@@ -152,8 +154,48 @@ app.post('/api/products/analyze', verifyToken, (req, res) => {
             return res.status(400).json({ error: 'Keyword must be under 200 characters.' });
         }
 
+        // ---- Quota enforcement (Phase 3) ----
+        const user = await User.findById(req.userId);
+
+        if (!user) {
+            return res.status(404).json({ error: 'User not found.' });
+        }
+
+        await resetDailyQuotaIfNeeded(user);
+
+        const FREE_BASE_LIMIT = 3;
+
+        // Pro users bypass all quota checks
+        if (user.plan !== 'pro') {
+            const remainingBase = Math.max(0, FREE_BASE_LIMIT - user.dailySearchCount);
+            const available = remainingBase + user.bonusSearchCredits;
+
+            if (available <= 0) {
+                return res.status(403).json({
+                    error: 'Daily search limit reached. Watch an ad to unlock more searches.',
+                    remainingBase: 0,
+                    bonusCredits: user.bonusSearchCredits,
+                });
+            }
+        }
+
+        // ---- Generate products (deterministic engine unchanged) ----
         const signal = getSignalStrength(kw);
         const products = generateProducts(kw, 6);
+
+        // ---- Deduct quota (Phase 3) ----
+        if (user.plan !== 'pro') {
+            const remainingBase = Math.max(0, FREE_BASE_LIMIT - user.dailySearchCount);
+
+            if (remainingBase > 0) {
+                user.dailySearchCount += 1;
+            } else {
+                user.bonusSearchCredits -= 1;
+            }
+
+            await user.save();
+        }
+
         res.json({ products, signal });
     } catch (err) {
         console.error('Analyze error:', err.message);
@@ -205,6 +247,48 @@ app.get('/api/products/my', verifyToken, async (req, res) => {
     } catch (err) {
         console.error('Fetch history error:', err.message);
         return res.status(500).json({ error: 'Failed to fetch product history.' });
+    }
+});
+
+// ---- Ad-Complete Endpoint (Phase 3 — Quota Unlock) ----
+app.post('/api/ad-complete', verifyToken, async (req, res) => {
+    try {
+        const user = await User.findById(req.userId);
+
+        if (!user) {
+            return res.status(404).json({ error: 'User not found.' });
+        }
+
+        await resetDailyQuotaIfNeeded(user);
+
+        // Pro users don't need ads
+        if (user.plan === 'pro') {
+            return res.status(400).json({ error: 'Pro users have unlimited searches.' });
+        }
+
+        const MAX_DAILY_ADS = 2;
+
+        if (user.dailyAdUnlockCount >= MAX_DAILY_ADS) {
+            return res.status(403).json({
+                error: 'Ad limit reached. You can watch up to 2 ads per day.',
+                dailyAdUnlockCount: user.dailyAdUnlockCount,
+            });
+        }
+
+        const CREDITS_PER_AD = 2;
+
+        user.dailyAdUnlockCount += 1;
+        user.bonusSearchCredits += CREDITS_PER_AD;
+        await user.save();
+
+        return res.json({
+            message: `Ad completed! You earned ${CREDITS_PER_AD} bonus searches.`,
+            bonusSearchCredits: user.bonusSearchCredits,
+            dailyAdUnlockCount: user.dailyAdUnlockCount,
+        });
+    } catch (err) {
+        console.error('Ad-complete error:', err.message);
+        return res.status(500).json({ error: 'Failed to process ad completion.' });
     }
 });
 

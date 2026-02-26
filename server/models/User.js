@@ -22,6 +22,24 @@ const userSchema = new mongoose.Schema({
         type: Date,
         default: Date.now,
     },
+
+    // ---- Quota fields (Phase 3 — Ad-Based Monetization) ----
+    dailySearchCount: {
+        type: Number,
+        default: 0,
+    },
+    dailyAdUnlockCount: {
+        type: Number,
+        default: 0,
+    },
+    bonusSearchCredits: {
+        type: Number,
+        default: 0,
+    },
+    lastResetDate: {
+        type: String,
+        default: null,
+    },
 });
 
 // Never return passwordHash in JSON responses

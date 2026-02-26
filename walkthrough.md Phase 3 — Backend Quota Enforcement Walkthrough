@@ -1,0 +1,62 @@
+# Phase 3 — Backend Quota Enforcement Walkthrough
+
+## Changes Made
+
+### 1. User Model — [User.js](file:///c:/Users/dasar/DropGravity%20Pro/server/models/User.js)
+
+Added 4 quota fields **at the end of the schema** (before `module.exports`):
+
+| Field | Type | Default | Purpose |
+|---|---|---|---|
+| `dailySearchCount` | Number | 0 | Tracks free searches used today |
+| `dailyAdUnlockCount` | Number | 0 | Tracks ads watched today (max 2) |
+| `bonusSearchCredits` | Number | 0 | Extra searches earned via ads |
+| `lastResetDate` | String | null | YYYY-MM-DD in UTC for daily reset |
+
+---
+
+### 2. Quota Utility — [quotaUtils.js](file:///c:/Users/dasar/DropGravity%20Pro/server/utils/quotaUtils.js) `[NEW]`
+
+- [getTodayDateString()](file:///c:/Users/dasar/DropGravity%20Pro/server/utils/quotaUtils.js#8-14) — returns UTC date as `YYYY-MM-DD`
+- [resetDailyQuotaIfNeeded(user)](file:///c:/Users/dasar/DropGravity%20Pro/server/utils/quotaUtils.js#15-32) — compares `lastResetDate` to today, resets all daily counters if mismatched, saves to DB
+
+---
+
+### 3. Analyze Route — [index.js](file:///c:/Users/dasar/DropGravity%20Pro/server/index.js#L142-L204)
+
+`POST /api/products/analyze` changes:
+- Made handler `async`
+- Loads user from DB via `User.findById(req.userId)`
+- **User existence check** → 404 if `!user` (per architect correction)
+- Calls [resetDailyQuotaIfNeeded(user)](file:///c:/Users/dasar/DropGravity%20Pro/server/utils/quotaUtils.js#15-32)
+- **Quota check** (free users): 3 base + bonus credits, returns 403 if exhausted
+- **Pro bypass**: no quota checks for `plan === 'pro'`
+- **Post-generation deduction**: increments `dailySearchCount` or decrements `bonusSearchCredits`
+- Deterministic engine calls (`generateProducts`, `getSignalStrength`) **unchanged**
+
+---
+
+### 4. Ad-Complete Endpoint — [index.js](file:///c:/Users/dasar/DropGravity%20Pro/server/index.js#L253-L293) `[NEW]`
+
+`POST /api/ad-complete` (protected with [verifyToken](file:///c:/Users/dasar/DropGravity%20Pro/server/middleware/verifyToken.js#3-29)):
+- User existence check → 404
+- Pro users rejected → 400
+- Max 2 ads/day → 403 if exceeded
+- Awards 2 `bonusSearchCredits` per ad
+
+---
+
+## Verification Checklist
+
+| Test | Expected | Status |
+|---|---|---|
+| Quota fields in MongoDB | 4 new fields with defaults on new users | ✅ Schema correct |
+| Free user 3-search limit | 4th call → 403 `remainingBase: 0` | ✅ Logic implemented |
+| Ad unlock flow | `POST /api/ad-complete` → +2 bonus credits | ✅ Endpoint ready |
+| Ad limit (max 2/day) | 3rd ad call → 403 | ✅ Guard in place |
+| Pro user bypass | Analyze always succeeds, ad-complete → 400 | ✅ Plan check correct |
+| Daily reset | Mismatched `lastResetDate` triggers counter reset | ✅ Utility tested |
+| User not found | Returns 404, no crash | ✅ Guard in both routes |
+
+> [!IMPORTANT]
+> All changes are **additive only**. No existing grading/engine logic was modified. Deterministic behavior preserved.
