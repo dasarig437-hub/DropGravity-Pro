@@ -465,6 +465,108 @@
     }
 }
 
+/* ---- Phase 4: Quota Blocked Card ---- */
+.quota-blocked-card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 60px 24px;
+    text-align: center;
+    min-height: 300px;
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.06) 0%, rgba(236, 72, 153, 0.04) 100%);
+}
+
+.quota-blocked-icon {
+    color: var(--accent-danger);
+    opacity: 0.7;
+    margin-bottom: 4px;
+}
+
+.quota-blocked-card h3 {
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+
+.quota-blocked-detail {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.quota-blocked-detail strong {
+    color: var(--text-primary);
+}
+
+/* Watch Ad Button */
+.quota-ad-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 28px;
+    border-radius: var(--radius-lg);
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: white;
+    background: var(--gradient-primary);
+    box-shadow: 0 4px 20px rgba(139, 92, 246, 0.35);
+    transition: all var(--transition-fast);
+    cursor: pointer;
+    border: none;
+    margin-top: 4px;
+}
+
+.quota-ad-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 30px rgba(139, 92, 246, 0.5);
+}
+
+.quota-ad-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.8;
+}
+
+.quota-ad-btn.loading {
+    animation: pulse-glow 1.5s infinite;
+}
+
+/* Exhausted message (no more ads available) */
+.quota-exhausted {
+    font-size: 0.85rem;
+    color: var(--text-tertiary);
+    margin-top: 4px;
+    font-style: italic;
+}
+
+/* ---- Phase 4: Search Usage Indicator ---- */
+.search-usage-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: var(--radius-full);
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: var(--bg-glass);
+    border: 1px solid var(--border-primary);
+    width: fit-content;
+}
+
+.search-usage-indicator.search-usage-pro {
+    color: var(--accent-primary);
+    background: rgba(139, 92, 246, 0.08);
+    border-color: rgba(139, 92, 246, 0.2);
+}
+
+.usage-bonus {
+    color: var(--accent-success);
+    font-weight: 700;
+}
+
 /* Shake animation for empty search */
 .search-container.shake {
     animation: finderShake 0.4s ease;

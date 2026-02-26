@@ -164,6 +164,7 @@ app.post('/api/products/analyze', verifyToken, async (req, res) => {
         await resetDailyQuotaIfNeeded(user);
 
         const FREE_BASE_LIMIT = 3;
+        const MAX_DAILY_ADS = 2;
 
         // Pro users bypass all quota checks
         if (user.plan !== 'pro') {
@@ -175,6 +176,8 @@ app.post('/api/products/analyze', verifyToken, async (req, res) => {
                     error: 'Daily search limit reached. Watch an ad to unlock more searches.',
                     remainingBase: 0,
                     bonusCredits: user.bonusSearchCredits,
+                    dailySearchCount: user.dailySearchCount,
+                    adAvailable: user.dailyAdUnlockCount < MAX_DAILY_ADS,
                 });
             }
         }
@@ -196,7 +199,18 @@ app.post('/api/products/analyze', verifyToken, async (req, res) => {
             await user.save();
         }
 
-        res.json({ products, signal });
+        // Include quota metadata for frontend usage indicator
+        const quota = user.plan === 'pro'
+            ? { plan: 'pro' }
+            : {
+                plan: user.plan,
+                dailySearchCount: user.dailySearchCount,
+                bonusSearchCredits: user.bonusSearchCredits,
+                dailyAdUnlockCount: user.dailyAdUnlockCount,
+                baseLimit: FREE_BASE_LIMIT,
+            };
+
+        res.json({ products, signal, quota });
     } catch (err) {
         console.error('Analyze error:', err.message);
         return res.status(500).json({ error: 'Failed to analyze products.' });

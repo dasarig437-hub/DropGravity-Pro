@@ -96,11 +96,36 @@ export async function analyzeProducts(keyword) {
         method: 'POST',
         body: JSON.stringify({ keyword }),
     });
+
+    // Quota blocked — return structured object instead of throwing
+    if (res.status === 403) {
+        const data = await res.json().catch(() => ({}));
+        return {
+            quotaBlocked: true,
+            remainingBase: data.remainingBase ?? 0,
+            bonusCredits: data.bonusCredits ?? 0,
+            dailySearchCount: data.dailySearchCount ?? 0,
+            adAvailable: data.adAvailable ?? false,
+            error: data.error || 'Daily search limit reached.',
+        };
+    }
+
     if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || 'Failed to analyze products');
     }
     return res.json();
+}
+
+export async function completeAd() {
+    const res = await authFetch('/api/ad-complete', {
+        method: 'POST',
+    });
+    const data = await res.json();
+    if (!res.ok) {
+        throw new Error(data.error || 'Failed to complete ad');
+    }
+    return data;
 }
 
 export async function fetchTrendingProducts() {

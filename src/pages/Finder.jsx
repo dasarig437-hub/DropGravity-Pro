@@ -3,11 +3,12 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import {
     Search, SlidersHorizontal, Upload, Link, Filter,
     ChevronDown, ChevronUp, ArrowRight, TrendingUp, Star,
-    X, Grid, List, SearchX, Loader2, GitCompareArrows, AlertTriangle
+    X, Grid, List, SearchX, Loader2, GitCompareArrows, AlertTriangle,
+    Tv, Zap, Ban
 } from 'lucide-react';
 import { niches, regions } from '../data/mockData';
 import { getGradeColor } from '../engine/gradingEngine';
-import { analyzeProducts, fetchTrendingProducts } from '../services/api';
+import { analyzeProducts, fetchTrendingProducts, completeAd } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import './Finder.css';
 
@@ -16,7 +17,7 @@ const GRADE_RANK = { A: 1, B: 2, C: 3, D: 4, F: 5 };
 export default function Finder() {
     const navigate = useNavigate();
     const location = useLocation();
-    const { isAuthenticated } = useAuth();
+    const { isAuthenticated, user } = useAuth();
     const [searchQuery, setSearchQuery] = useState('');
     const [showFilters, setShowFilters] = useState(true);
     const [viewMode, setViewMode] = useState('grid');
@@ -42,6 +43,14 @@ export default function Finder() {
     });
     const incomingHandled = useRef(false);
 
+    // ---- Quota state (Phase 4) ----
+    const [quotaInfo, setQuotaInfo] = useState(null);
+    const [quotaBlocked, setQuotaBlocked] = useState(false);
+    const [watchingAd, setWatchingAd] = useState(false);
+    const [quotaUsage, setQuotaUsage] = useState(null); // from last successful analyze
+
+    const isPro = user?.plan === 'pro';
+
     const searchTabs = [
         { id: 'keyword', label: 'Keyword' },
         { id: 'shopify', label: 'Shopify URL' },
@@ -57,6 +66,24 @@ export default function Finder() {
         { label: 'Fitness gear', query: 'resistance band' },
     ];
 
+    // Helper: process analyze response (shared by all search paths)
+    const processAnalyzeResult = (data) => {
+        if (data.quotaBlocked) {
+            setQuotaBlocked(true);
+            setQuotaInfo(data);
+            setProducts([]);
+            return;
+        }
+        setQuotaBlocked(false);
+        setQuotaInfo(null);
+        setProducts(data.products || data);
+        setSignal(data.signal || 'high');
+        // Update quota usage from backend response
+        if (data.quota) {
+            setQuotaUsage(data.quota);
+        }
+    };
+
     // On mount: check for incoming keyword from header/home search, or load trending
     useEffect(() => {
         const incomingKeyword = location.state?.keyword;
@@ -69,10 +96,7 @@ export default function Finder() {
             // Clear the navigation state so re-visit doesn't re-trigger
             window.history.replaceState({}, '');
             analyzeProducts(incomingKeyword)
-                .then(data => {
-                    setProducts(data.products || data);
-                    setSignal(data.signal || 'high');
-                })
+                .then(processAnalyzeResult)
                 .catch(err => { console.error('Search failed:', err); setProducts([]); })
                 .finally(() => setLoading(false));
         } else if (!incomingHandled.current) {
@@ -100,10 +124,11 @@ export default function Finder() {
         searchDebounceRef.current = true;
         setLoading(true);
         setSearched(true);
+        setQuotaBlocked(false);
+        setQuotaInfo(null);
         try {
             const data = await analyzeProducts(query);
-            setProducts(data.products || data);
-            setSignal(data.signal || 'high');
+            processAnalyzeResult(data);
         } catch (err) {
             console.error('Search failed:', err);
             setProducts([]);
@@ -123,10 +148,11 @@ export default function Finder() {
         setSearchQuery(query);
         setLoading(true);
         setSearched(true);
+        setQuotaBlocked(false);
+        setQuotaInfo(null);
         try {
             const data = await analyzeProducts(query);
-            setProducts(data.products || data);
-            setSignal(data.signal || 'high');
+            processAnalyzeResult(data);
         } catch (err) {
             console.error('Quick query failed:', err);
             setProducts([]);
@@ -136,9 +162,37 @@ export default function Finder() {
         }
     };
 
+    // ---- Watch Ad handler (Phase 4) — guarded ----
+    const handleWatchAd = async () => {
+        // Guard: prevent double-click, empty query, already watching
+        if (watchingAd) return;
+        const query = searchQuery.trim();
+        if (!query) return;
+
+        setWatchingAd(true);
+        try {
+            // Simulate 2-second ad viewing delay (real AdSense later)
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            await completeAd();
+
+            // Reset quota state and re-trigger search
+            setQuotaBlocked(false);
+            setQuotaInfo(null);
+
+            const data = await analyzeProducts(query);
+            processAnalyzeResult(data);
+        } catch (err) {
+            console.error('Ad flow failed:', err);
+        } finally {
+            setWatchingAd(false);
+        }
+    };
+
     const clearSearch = () => {
         setSearchQuery('');
         setSearched(false);
+        setQuotaBlocked(false);
+        setQuotaInfo(null);
         setFilters({ niche: 'All Niches', region: 'All Regions', minMargin: 0, minGrade: 'F', maxSaturation: 100 });
         // Reload trending
         const loadTrending = async () => {
@@ -190,6 +244,37 @@ export default function Finder() {
             sessionStorage.setItem('compareProducts', JSON.stringify(compareList));
             navigate('/compare', { state: { products: compareList } });
         }
+    };
+
+    // ---- Usage indicator text (Phase 4) ----
+    const renderUsageIndicator = () => {
+        if (!isAuthenticated) return null;
+
+        if (isPro) {
+            return (
+                <div className="search-usage-indicator search-usage-pro">
+                    <Zap size={13} />
+                    <span>Pro Plan — Unlimited Searches</span>
+                </div>
+            );
+        }
+
+        if (quotaUsage && quotaUsage.plan !== 'pro') {
+            const base = quotaUsage.dailySearchCount ?? 0;
+            const limit = quotaUsage.baseLimit ?? 3;
+            const bonus = quotaUsage.bonusSearchCredits ?? 0;
+            return (
+                <div className="search-usage-indicator">
+                    <Search size={13} />
+                    <span>
+                        Searches Today: {base} / {limit}
+                        {bonus > 0 && <span className="usage-bonus"> (+{bonus} bonus)</span>}
+                    </span>
+                </div>
+            );
+        }
+
+        return null;
     };
 
     return (
@@ -254,6 +339,9 @@ export default function Finder() {
                         </div>
                     )}
                 </div>
+
+                {/* Usage Indicator (Phase 4) */}
+                {renderUsageIndicator()}
 
                 {/* Quick Queries */}
                 <div className="advanced-queries">
@@ -332,8 +420,43 @@ export default function Finder() {
                         </div>
                     )}
 
-                    {/* Results */}
-                    {loading ? (
+                    {/* Quota Blocked Card (Phase 4) */}
+                    {quotaBlocked && !isPro ? (
+                        <div className="quota-blocked-card glass-card animate-fade-in">
+                            <div className="quota-blocked-icon">
+                                <Ban size={48} />
+                            </div>
+                            <h3>Daily Limit Reached</h3>
+                            <p className="quota-blocked-detail">
+                                Base remaining: <strong>{quotaInfo?.remainingBase ?? 0}</strong> &nbsp;·&nbsp;
+                                Bonus remaining: <strong>{quotaInfo?.bonusCredits ?? 0}</strong>
+                            </p>
+
+                            {quotaInfo?.adAvailable ? (
+                                <button
+                                    className={`quota-ad-btn ${watchingAd ? 'loading' : ''}`}
+                                    onClick={handleWatchAd}
+                                    disabled={watchingAd}
+                                >
+                                    {watchingAd ? (
+                                        <>
+                                            <Loader2 size={16} className="spin-icon" />
+                                            Watching Ad...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Tv size={16} />
+                                            Watch Ad to Unlock 2 More Searches
+                                        </>
+                                    )}
+                                </button>
+                            ) : (
+                                <p className="quota-exhausted">
+                                    You've used your 2 daily ad unlocks. Come back tomorrow.
+                                </p>
+                            )}
+                        </div>
+                    ) : loading ? (
                         <div className="finder-empty-state">
                             <Loader2 size={48} className="finder-empty-icon spin-icon" />
                             <h3>Analyzing products...</h3>
