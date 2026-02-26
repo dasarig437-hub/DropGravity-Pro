@@ -1,0 +1,4967 @@
+# Walkthrough — All 9 Review Issues Fixed
+
+## Summary
+
+Fixed all 9 issues identified in your screenshot review, across **6 files**. Every fix was browser-tested and verified.
+
+---
+
+## Changes Made
+
+### 🔴 Functional Fixes
+
+**#1 + #6 — Finder Empty State** (was blank screen on no results)
+
+```diff:Finder.jsx
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+    Search, SlidersHorizontal, Upload, Link, Filter,
+    ChevronDown, ChevronUp, ArrowRight, TrendingUp, Star,
+    X, Grid, List
+} from 'lucide-react';
+import { trendingProducts, niches, regions } from '../data/mockData';
+import { getGradeColor } from '../engine/gradingEngine';
+import './Finder.css';
+
+export default function Finder() {
+    const navigate = useNavigate();
+    const [searchQuery, setSearchQuery] = useState('');
+    const [showFilters, setShowFilters] = useState(true);
+    const [viewMode, setViewMode] = useState('grid');
+    const [activeTab, setActiveTab] = useState('keyword');
+    const [filters, setFilters] = useState({
+        niche: 'All Niches',
+        region: 'All Regions',
+        minMargin: 0,
+        minGrade: 'F',
+        maxSaturation: 100,
+    });
+
+    const searchTabs = [
+        { id: 'keyword', label: 'Keyword' },
+        { id: 'shopify', label: 'Shopify URL' },
+        { id: 'tiktok', label: 'TikTok URL' },
+        { id: 'aliexpress', label: 'AliExpress URL' },
+        { id: 'csv', label: 'CSV Upload' },
+    ];
+
+    const advancedQueries = [
+        { label: 'A-Grade under 3 competitors', query: 'grade:A competitors:<3' },
+        { label: 'High margin, low CPC', query: 'margin:>60 cpc:<30' },
+        { label: 'Rising trend, low saturation', query: 'trend:rising saturation:<40' },
+        { label: 'Electronics under $10', query: 'niche:electronics price:<10' },
+    ];
+
+    const filteredProducts = trendingProducts.filter(p => {
+        if (searchQuery && !p.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+        if (filters.niche !== 'All Niches' && p.category !== filters.niche) return false;
+        if (p.profitMargin < filters.minMargin) return false;
+        if (p.marketSaturation > filters.maxSaturation) return false;
+        return true;
+    });
+
+    return (
+        <div className="finder-page">
+            {/* Search Header */}
+            <div className="finder-header animate-fade-in-up">
+                <h1 className="finder-title">Product Finder</h1>
+                <p className="finder-subtitle">Search, filter, and discover winning products</p>
+            </div>
+
+            {/* Search Tabs */}
+            <div className="finder-search-section animate-fade-in-up delay-1">
+                <div className="tabs">
+                    {searchTabs.map(tab => (
+                        <button
+                            key={tab.id}
+                            className={`tab ${activeTab === tab.id ? 'active' : ''}`}
+                            onClick={() => setActiveTab(tab.id)}
+                        >
+                            {tab.label}
+                        </button>
+                    ))}
+                </div>
+
+                <div className="finder-search-box">
+                    {activeTab === 'csv' ? (
+                        <div className="csv-upload-area">
+                            <Upload size={24} />
+                            <p>Drop your CSV file here or click to browse</p>
+                            <span>Supports: .csv, .xlsx (max 500 products)</span>
+                        </div>
+                    ) : (
+                        <div className="search-container">
+                            {activeTab === 'keyword' ? <Search size={18} className="hero-search-icon" /> : <Link size={18} className="hero-search-icon" />}
+                            <input
+                                type="text"
+                                placeholder={
+                                    activeTab === 'keyword' ? 'Search by keyword, niche, or product name...' :
+                                        activeTab === 'shopify' ? 'Paste Shopify store URL...' :
+                                            activeTab === 'tiktok' ? 'Paste TikTok product URL...' :
+                                                'Paste AliExpress product URL...'
+                                }
+                                className="hero-search-input"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                            />
+                            <button className="hero-search-btn">
+                                <Search size={16} /> Search
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                {/* Advanced Queries */}
+                <div className="advanced-queries">
+                    <span className="aq-label">Quick:</span>
+                    {advancedQueries.map((aq, i) => (
+                        <button key={i} className="aq-btn" onClick={() => setSearchQuery(aq.query)}>
+                            {aq.label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {/* Content Area */}
+            <div className="finder-content animate-fade-in-up delay-2">
+                {/* Filter Toggle & View Mode */}
+                <div className="finder-toolbar">
+                    <button className="btn btn-secondary btn-sm" onClick={() => setShowFilters(!showFilters)}>
+                        <SlidersHorizontal size={14} />
+                        Filters
+                        {showFilters ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </button>
+                    <div className="finder-results-info">
+                        <span>{filteredProducts.length} products found</span>
+                    </div>
+                    <div className="view-toggle">
+                        <button className={`view-btn ${viewMode === 'grid' ? 'active' : ''}`} onClick={() => setViewMode('grid')}><Grid size={16} /></button>
+                        <button className={`view-btn ${viewMode === 'list' ? 'active' : ''}`} onClick={() => setViewMode('list')}><List size={16} /></button>
+                    </div>
+                </div>
+
+                <div className="finder-body">
+                    {/* Filters Panel */}
+                    {showFilters && (
+                        <div className="filters-panel glass-card animate-fade-in">
+                            <h3 className="filters-title"><Filter size={14} /> Filters</h3>
+
+                            <div className="filter-group">
+                                <label className="filter-label">Niche</label>
+                                <select className="select-field" value={filters.niche} onChange={e => setFilters({ ...filters, niche: e.target.value })}>
+                                    {niches.map(n => <option key={n}>{n}</option>)}
+                                </select>
+                            </div>
+
+                            <div className="filter-group">
+                                <label className="filter-label">Region</label>
+                                <select className="select-field" value={filters.region} onChange={e => setFilters({ ...filters, region: e.target.value })}>
+                                    {regions.map(r => <option key={r}>{r}</option>)}
+                                </select>
+                            </div>
+
+                            <div className="filter-group">
+                                <label className="filter-label">Min Profit Margin: {filters.minMargin}%</label>
+                                <input type="range" className="range-slider" min="0" max="100" value={filters.minMargin}
+                                    onChange={e => setFilters({ ...filters, minMargin: Number(e.target.value) })} />
+                            </div>
+
+                            <div className="filter-group">
+                                <label className="filter-label">Max Saturation: {filters.maxSaturation}%</label>
+                                <input type="range" className="range-slider" min="0" max="100" value={filters.maxSaturation}
+                                    onChange={e => setFilters({ ...filters, maxSaturation: Number(e.target.value) })} />
+                            </div>
+
+                            <div className="filter-group">
+                                <label className="filter-label">Min Grade</label>
+                                <select className="select-field" value={filters.minGrade} onChange={e => setFilters({ ...filters, minGrade: e.target.value })}>
+                                    {['A', 'B', 'C', 'D', 'F'].map(g => <option key={g}>{g}</option>)}
+                                </select>
+                            </div>
+
+                            <button className="btn btn-secondary btn-sm" style={{ width: '100%' }}
+                                onClick={() => setFilters({ niche: 'All Niches', region: 'All Regions', minMargin: 0, minGrade: 'F', maxSaturation: 100 })}>
+                                <X size={14} /> Clear All
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Results */}
+                    <div className={`finder-results ${viewMode}`}>
+                        {filteredProducts.map((product) => (
+                            <div key={product.id}
+                                className={`finder-product-card glass-card ${viewMode === 'list' ? 'list-card' : ''}`}
+                                onClick={() => navigate('/dashboard', { state: { product } })}
+                            >
+                                <div className="fpc-header">
+                                    <span className="fpc-emoji">{product.image}</span>
+                                    <div className="fpc-grade" style={{
+                                        background: `${getGradeColor(product.grade)}22`,
+                                        color: getGradeColor(product.grade),
+                                        border: `1px solid ${getGradeColor(product.grade)}44`
+                                    }}>
+                                        {product.grade}
+                                    </div>
+                                </div>
+                                <h4 className="fpc-name">{product.name}</h4>
+                                <div className="fpc-category">{product.category}</div>
+                                <div className="fpc-stats">
+                                    <div className="fpc-stat">
+                                        <span className="fpc-stat-label">Margin</span>
+                                        <span className="fpc-stat-value" style={{ color: '#10b981' }}>{product.profitMargin}%</span>
+                                    </div>
+                                    <div className="fpc-stat">
+                                        <span className="fpc-stat-label">Trend</span>
+                                        <span className="fpc-stat-value" style={{ color: '#8b5cf6' }}>{product.trendVelocity}</span>
+                                    </div>
+                                    <div className="fpc-stat">
+                                        <span className="fpc-stat-label">Sat.</span>
+                                        <span className="fpc-stat-value" style={{ color: product.marketSaturation > 60 ? '#ef4444' : '#06b6d4' }}>{product.marketSaturation}%</span>
+                                    </div>
+                                </div>
+                                <div className="fpc-prices">
+                                    <span className="fpc-cost">${product.price}</span>
+                                    <ArrowRight size={10} />
+                                    <span className="fpc-sell">${product.sellPrice}</span>
+                                </div>
+                                <div className="fpc-footer">
+                                    <span className={`fpc-trend ${product.trend}`}>
+                                        {product.trend === 'rising' ? '↑' : product.trend === 'declining' ? '↓' : '→'} {product.trend}
+                                    </span>
+                                    <span className="fpc-orders">{product.orders.toLocaleString()} orders</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+===
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+    Search, SlidersHorizontal, Upload, Link, Filter,
+    ChevronDown, ChevronUp, ArrowRight, TrendingUp, Star,
+    X, Grid, List, SearchX
+} from 'lucide-react';
+import { trendingProducts, niches, regions } from '../data/mockData';
+import { getGradeColor } from '../engine/gradingEngine';
+import './Finder.css';
+
+export default function Finder() {
+    const navigate = useNavigate();
+    const [searchQuery, setSearchQuery] = useState('');
+    const [showFilters, setShowFilters] = useState(true);
+    const [viewMode, setViewMode] = useState('grid');
+    const [activeTab, setActiveTab] = useState('keyword');
+    const [filters, setFilters] = useState({
+        niche: 'All Niches',
+        region: 'All Regions',
+        minMargin: 0,
+        minGrade: 'F',
+        maxSaturation: 100,
+    });
+
+    const searchTabs = [
+        { id: 'keyword', label: 'Keyword' },
+        { id: 'shopify', label: 'Shopify URL' },
+        { id: 'tiktok', label: 'TikTok URL' },
+        { id: 'aliexpress', label: 'AliExpress URL' },
+        { id: 'csv', label: 'CSV Upload' },
+    ];
+
+    const advancedQueries = [
+        { label: 'A-Grade under 3 competitors', query: 'grade:A competitors:<3' },
+        { label: 'High margin, low CPC', query: 'margin:>60 cpc:<30' },
+        { label: 'Rising trend, low saturation', query: 'trend:rising saturation:<40' },
+        { label: 'Electronics under $10', query: 'niche:electronics price:<10' },
+    ];
+
+    const filteredProducts = trendingProducts.filter(p => {
+        if (searchQuery && !p.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+        if (filters.niche !== 'All Niches' && p.category !== filters.niche) return false;
+        if (p.profitMargin < filters.minMargin) return false;
+        if (p.marketSaturation > filters.maxSaturation) return false;
+        return true;
+    });
+
+    return (
+        <div className="finder-page">
+            {/* Search Header */}
+            <div className="finder-header animate-fade-in-up">
+                <h1 className="finder-title">Product Finder</h1>
+                <p className="finder-subtitle">Search, filter, and discover winning products</p>
+            </div>
+
+            {/* Search Tabs */}
+            <div className="finder-search-section animate-fade-in-up delay-1">
+                <div className="tabs">
+                    {searchTabs.map(tab => (
+                        <button
+                            key={tab.id}
+                            className={`tab ${activeTab === tab.id ? 'active' : ''}`}
+                            onClick={() => setActiveTab(tab.id)}
+                        >
+                            {tab.label}
+                        </button>
+                    ))}
+                </div>
+
+                <div className="finder-search-box">
+                    {activeTab === 'csv' ? (
+                        <div className="csv-upload-area">
+                            <Upload size={24} />
+                            <p>Drop your CSV file here or click to browse</p>
+                            <span>Supports: .csv, .xlsx (max 500 products)</span>
+                        </div>
+                    ) : (
+                        <div className="search-container">
+                            {activeTab === 'keyword' ? <Search size={18} className="hero-search-icon" /> : <Link size={18} className="hero-search-icon" />}
+                            <input
+                                type="text"
+                                placeholder={
+                                    activeTab === 'keyword' ? 'Search by keyword, niche, or product name...' :
+                                        activeTab === 'shopify' ? 'Paste Shopify store URL...' :
+                                            activeTab === 'tiktok' ? 'Paste TikTok product URL...' :
+                                                'Paste AliExpress product URL...'
+                                }
+                                className="hero-search-input"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                            />
+                            <button className="hero-search-btn">
+                                <Search size={16} /> Search
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                {/* Advanced Queries */}
+                <div className="advanced-queries">
+                    <span className="aq-label">Quick:</span>
+                    {advancedQueries.map((aq, i) => (
+                        <button key={i} className="aq-btn" onClick={() => setSearchQuery(aq.query)}>
+                            {aq.label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {/* Content Area */}
+            <div className="finder-content animate-fade-in-up delay-2">
+                {/* Filter Toggle & View Mode */}
+                <div className="finder-toolbar">
+                    <button className="btn btn-secondary btn-sm" onClick={() => setShowFilters(!showFilters)}>
+                        <SlidersHorizontal size={14} />
+                        Filters
+                        {showFilters ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </button>
+                    <div className="finder-results-info">
+                        <span>{filteredProducts.length} products found</span>
+                    </div>
+                    <div className="view-toggle">
+                        <button className={`view-btn ${viewMode === 'grid' ? 'active' : ''}`} onClick={() => setViewMode('grid')}><Grid size={16} /></button>
+                        <button className={`view-btn ${viewMode === 'list' ? 'active' : ''}`} onClick={() => setViewMode('list')}><List size={16} /></button>
+                    </div>
+                </div>
+
+                <div className="finder-body">
+                    {/* Filters Panel */}
+                    {showFilters && (
+                        <div className="filters-panel glass-card animate-fade-in">
+                            <h3 className="filters-title"><Filter size={14} /> Filters</h3>
+
+                            <div className="filter-group">
+                                <label className="filter-label">Niche</label>
+                                <select className="select-field" value={filters.niche} onChange={e => setFilters({ ...filters, niche: e.target.value })}>
+                                    {niches.map(n => <option key={n}>{n}</option>)}
+                                </select>
+                            </div>
+
+                            <div className="filter-group">
+                                <label className="filter-label">Region</label>
+                                <select className="select-field" value={filters.region} onChange={e => setFilters({ ...filters, region: e.target.value })}>
+                                    {regions.map(r => <option key={r}>{r}</option>)}
+                                </select>
+                            </div>
+
+                            <div className="filter-group">
+                                <label className="filter-label">Min Profit Margin: {filters.minMargin}%</label>
+                                <input type="range" className="range-slider" min="0" max="100" value={filters.minMargin}
+                                    onChange={e => setFilters({ ...filters, minMargin: Number(e.target.value) })} />
+                            </div>
+
+                            <div className="filter-group">
+                                <label className="filter-label">Max Saturation: {filters.maxSaturation}%</label>
+                                <input type="range" className="range-slider" min="0" max="100" value={filters.maxSaturation}
+                                    onChange={e => setFilters({ ...filters, maxSaturation: Number(e.target.value) })} />
+                            </div>
+
+                            <div className="filter-group">
+                                <label className="filter-label">Min Grade</label>
+                                <select className="select-field" value={filters.minGrade} onChange={e => setFilters({ ...filters, minGrade: e.target.value })}>
+                                    {['A', 'B', 'C', 'D', 'F'].map(g => <option key={g}>{g}</option>)}
+                                </select>
+                            </div>
+
+                            <button className="btn btn-secondary btn-sm" style={{ width: '100%' }}
+                                onClick={() => setFilters({ niche: 'All Niches', region: 'All Regions', minMargin: 0, minGrade: 'F', maxSaturation: 100 })}>
+                                <X size={14} /> Clear All
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Results */}
+                    {filteredProducts.length === 0 ? (
+                        <div className="finder-empty-state">
+                            <SearchX size={48} className="finder-empty-icon" />
+                            <h3>No products match your search</h3>
+                            <p>Try broader keywords or adjust your filters</p>
+                            <button
+                                className="btn btn-primary btn-sm"
+                                onClick={() => {
+                                    setSearchQuery('');
+                                    setFilters({ niche: 'All Niches', region: 'All Regions', minMargin: 0, minGrade: 'F', maxSaturation: 100 });
+                                }}
+                            >
+                                <X size={14} /> Clear All Filters
+                            </button>
+                        </div>
+                    ) : (
+                        <div className={`finder-results ${viewMode}`}>
+                            {filteredProducts.map((product) => (
+                                <div key={product.id}
+                                    className={`finder-product-card glass-card ${viewMode === 'list' ? 'list-card' : ''}`}
+                                    onClick={() => navigate('/dashboard', { state: { product } })}
+                                >
+                                    <div className="fpc-header">
+                                        <span className="fpc-emoji">{product.image}</span>
+                                        <div className="fpc-grade" style={{
+                                            background: `${getGradeColor(product.grade)}22`,
+                                            color: getGradeColor(product.grade),
+                                            border: `1px solid ${getGradeColor(product.grade)}44`
+                                        }}>
+                                            {product.grade}
+                                        </div>
+                                    </div>
+                                    <h4 className="fpc-name">{product.name}</h4>
+                                    <div className="fpc-category">{product.category}</div>
+                                    <div className="fpc-stats">
+                                        <div className="fpc-stat">
+                                            <span className="fpc-stat-label">Margin</span>
+                                            <span className="fpc-stat-value" style={{ color: '#10b981' }}>{product.profitMargin}%</span>
+                                        </div>
+                                        <div className="fpc-stat">
+                                            <span className="fpc-stat-label">Trend</span>
+                                            <span className="fpc-stat-value" style={{ color: '#8b5cf6' }}>{product.trendVelocity}</span>
+                                        </div>
+                                        <div className="fpc-stat">
+                                            <span className="fpc-stat-label">Sat.</span>
+                                            <span className="fpc-stat-value" style={{ color: product.marketSaturation > 60 ? '#ef4444' : '#06b6d4' }}>{product.marketSaturation}%</span>
+                                        </div>
+                                    </div>
+                                    <div className="fpc-prices">
+                                        <span className="fpc-cost">${product.price}</span>
+                                        <ArrowRight size={10} />
+                                        <span className="fpc-sell">${product.sellPrice}</span>
+                                    </div>
+                                    <div className="fpc-footer">
+                                        <span className={`fpc-trend ${product.trend}`}>
+                                            {product.trend === 'rising' ? '↑' : product.trend === 'declining' ? '↓' : '→'} {product.trend}
+                                        </span>
+                                        <span className="fpc-orders">{product.orders.toLocaleString()} orders</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+```
+
+Now shows a `SearchX` icon, "No products match your search" heading, suggestion text, and a "Clear All Filters" button.
+
+```diff:Finder.css
+/* Finder Page Styles */
+
+.finder-page {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    position: relative;
+    z-index: 1;
+}
+
+.finder-header {
+    margin-bottom: 4px;
+}
+
+.finder-title {
+    font-size: 1.5rem;
+    font-weight: 800;
+}
+
+.finder-subtitle {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+/* Search */
+.finder-search-section {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.finder-search-box {
+    margin-top: 8px;
+}
+
+.csv-upload-area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 40px;
+    border: 2px dashed var(--border-primary);
+    border-radius: var(--radius-lg);
+    color: var(--text-tertiary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.csv-upload-area:hover {
+    border-color: var(--accent-primary);
+    color: var(--text-secondary);
+}
+
+.csv-upload-area p {
+    font-size: 0.9rem;
+}
+
+.csv-upload-area span {
+    font-size: 0.75rem;
+}
+
+.advanced-queries {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.aq-label {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    font-weight: 600;
+}
+
+.aq-btn {
+    font-size: 0.78rem;
+    padding: 5px 12px;
+    background: var(--bg-glass);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-full);
+    color: var(--text-secondary);
+    transition: all var(--transition-fast);
+}
+
+.aq-btn:hover {
+    color: var(--accent-primary);
+    border-color: var(--accent-primary);
+    background: rgba(139, 92, 246, 0.08);
+}
+
+/* Toolbar */
+.finder-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.finder-results-info {
+    flex: 1;
+    font-size: 0.82rem;
+    color: var(--text-tertiary);
+}
+
+.view-toggle {
+    display: flex;
+    gap: 4px;
+    padding: 3px;
+    background: var(--bg-glass);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-primary);
+}
+
+.view-btn {
+    padding: 6px 8px;
+    border-radius: 4px;
+    color: var(--text-tertiary);
+    transition: all var(--transition-fast);
+}
+
+.view-btn.active {
+    background: var(--accent-primary);
+    color: white;
+}
+
+/* Body */
+.finder-body {
+    display: flex;
+    gap: 20px;
+}
+
+/* Filters */
+.filters-panel {
+    width: 240px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    height: fit-content;
+    position: sticky;
+    top: calc(var(--topbar-height) + 24px);
+}
+
+.filters-title {
+    font-size: 0.9rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-primary);
+}
+
+.filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.filter-label {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+/* Results Grid */
+.finder-results {
+    flex: 1;
+    display: grid;
+    gap: 14px;
+}
+
+.finder-results.grid {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+
+.finder-results.list {
+    grid-template-columns: 1fr;
+}
+
+.finder-product-card {
+    cursor: pointer;
+    transition: all var(--transition-base);
+}
+
+.finder-product-card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-lg), var(--shadow-glow);
+}
+
+.list-card {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.list-card .fpc-header {
+    margin-bottom: 0;
+}
+
+.list-card .fpc-name {
+    flex: 1;
+    margin-bottom: 0;
+}
+
+.list-card .fpc-category {
+    display: none;
+}
+
+.list-card .fpc-stats {
+    flex-direction: row;
+    gap: 20px;
+}
+
+.list-card .fpc-footer {
+    border-top: none;
+    padding-top: 0;
+}
+
+.fpc-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10px;
+}
+
+.fpc-emoji {
+    font-size: 1.8rem;
+}
+
+.fpc-grade {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    font-weight: 800;
+}
+
+.fpc-name {
+    font-size: 0.9rem;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.fpc-category {
+    font-size: 0.72rem;
+    color: var(--text-tertiary);
+    margin-bottom: 12px;
+}
+
+.fpc-stats {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.fpc-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.fpc-stat-label {
+    font-size: 0.65rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+}
+
+.fpc-stat-value {
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.fpc-prices {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+
+.fpc-cost {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    text-decoration: line-through;
+}
+
+.fpc-sell {
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: var(--accent-success);
+}
+
+.fpc-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-primary);
+}
+
+.fpc-trend {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: capitalize;
+}
+
+.fpc-trend.rising {
+    color: var(--accent-success);
+}
+
+.fpc-trend.declining {
+    color: var(--accent-danger);
+}
+
+.fpc-trend.stable {
+    color: var(--accent-warning);
+}
+
+.fpc-orders {
+    font-size: 0.72rem;
+    color: var(--text-tertiary);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .filters-panel {
+        width: 100%;
+        position: static;
+    }
+
+    .finder-body {
+        flex-direction: column;
+    }
+
+    .finder-results.grid {
+        grid-template-columns: 1fr;
+    }
+}
+===
+/* Finder Page Styles */
+
+.finder-page {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    position: relative;
+    z-index: 1;
+}
+
+.finder-header {
+    margin-bottom: 4px;
+}
+
+.finder-title {
+    font-size: 1.5rem;
+    font-weight: 800;
+}
+
+.finder-subtitle {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+/* Search */
+.finder-search-section {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.finder-search-box {
+    margin-top: 8px;
+}
+
+.csv-upload-area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 40px;
+    border: 2px dashed var(--border-primary);
+    border-radius: var(--radius-lg);
+    color: var(--text-tertiary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.csv-upload-area:hover {
+    border-color: var(--accent-primary);
+    color: var(--text-secondary);
+}
+
+.csv-upload-area p {
+    font-size: 0.9rem;
+}
+
+.csv-upload-area span {
+    font-size: 0.75rem;
+}
+
+.advanced-queries {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.aq-label {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    font-weight: 600;
+}
+
+.aq-btn {
+    font-size: 0.78rem;
+    padding: 5px 12px;
+    background: var(--bg-glass);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-full);
+    color: var(--text-secondary);
+    transition: all var(--transition-fast);
+}
+
+.aq-btn:hover {
+    color: var(--accent-primary);
+    border-color: var(--accent-primary);
+    background: rgba(139, 92, 246, 0.08);
+}
+
+/* Toolbar */
+.finder-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.finder-results-info {
+    flex: 1;
+    font-size: 0.82rem;
+    color: var(--text-tertiary);
+}
+
+.view-toggle {
+    display: flex;
+    gap: 4px;
+    padding: 3px;
+    background: var(--bg-glass);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-primary);
+}
+
+.view-btn {
+    padding: 6px 8px;
+    border-radius: 4px;
+    color: var(--text-tertiary);
+    transition: all var(--transition-fast);
+}
+
+.view-btn.active {
+    background: var(--accent-primary);
+    color: white;
+}
+
+/* Body */
+.finder-body {
+    display: flex;
+    gap: 20px;
+}
+
+/* Filters */
+.filters-panel {
+    width: 240px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    height: fit-content;
+    position: sticky;
+    top: calc(var(--topbar-height) + 24px);
+}
+
+.filters-title {
+    font-size: 0.9rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-primary);
+}
+
+.filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.filter-label {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+/* Results Grid */
+.finder-results {
+    flex: 1;
+    display: grid;
+    gap: 14px;
+}
+
+.finder-results.grid {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+
+.finder-results.list {
+    grid-template-columns: 1fr;
+}
+
+.finder-product-card {
+    cursor: pointer;
+    transition: all var(--transition-base);
+}
+
+.finder-product-card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-lg), var(--shadow-glow);
+}
+
+.list-card {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.list-card .fpc-header {
+    margin-bottom: 0;
+}
+
+.list-card .fpc-name {
+    flex: 1;
+    margin-bottom: 0;
+}
+
+.list-card .fpc-category {
+    display: none;
+}
+
+.list-card .fpc-stats {
+    flex-direction: row;
+    gap: 20px;
+}
+
+.list-card .fpc-footer {
+    border-top: none;
+    padding-top: 0;
+}
+
+.fpc-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10px;
+}
+
+.fpc-emoji {
+    font-size: 1.8rem;
+}
+
+.fpc-grade {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    font-weight: 800;
+}
+
+.fpc-name {
+    font-size: 0.9rem;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.fpc-category {
+    font-size: 0.72rem;
+    color: var(--text-tertiary);
+    margin-bottom: 12px;
+}
+
+.fpc-stats {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.fpc-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.fpc-stat-label {
+    font-size: 0.65rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+}
+
+.fpc-stat-value {
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.fpc-prices {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+
+.fpc-cost {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    text-decoration: line-through;
+}
+
+.fpc-sell {
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: var(--accent-success);
+}
+
+.fpc-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-primary);
+}
+
+.fpc-trend {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: capitalize;
+}
+
+.fpc-trend.rising {
+    color: var(--accent-success);
+}
+
+.fpc-trend.declining {
+    color: var(--accent-danger);
+}
+
+.fpc-trend.stable {
+    color: var(--accent-warning);
+}
+
+.fpc-orders {
+    font-size: 0.72rem;
+    color: var(--text-tertiary);
+}
+
+/* Empty State */
+.finder-empty-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 80px 20px;
+    text-align: center;
+    min-height: 300px;
+}
+
+.finder-empty-icon {
+    color: var(--text-tertiary);
+    opacity: 0.5;
+    margin-bottom: 8px;
+}
+
+.finder-empty-state h3 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+}
+
+.finder-empty-state p {
+    font-size: 0.85rem;
+    color: var(--text-tertiary);
+    margin-bottom: 8px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .filters-panel {
+        width: 100%;
+        position: static;
+    }
+
+    .finder-body {
+        flex-direction: column;
+    }
+
+    .finder-results.grid {
+        grid-template-columns: 1fr;
+    }
+}
+```
+
+**#2 — Dashboard Refresh Resilience**
+
+Already safe — `dailyAGrade` fallback was in place. `hasSaved.current` ref prevents duplicate API calls. Verified by F5 refresh: Dashboard renders correctly with default product.
+
+---
+
+### 🟠 UI/UX Fixes
+
+**#3 — Dark-Themed Select Dropdowns**
+
+```diff:index.css
+/* =============================================
+   DropGravity Pro — Design System
+   Premium Dark Glassmorphism Theme
+   ============================================= */
+
+/* --- CSS Custom Properties --- */
+:root {
+  /* Primary Colors */
+  --bg-primary: #0a0e1a;
+  --bg-secondary: #111827;
+  --bg-tertiary: #1a2235;
+  --bg-card: rgba(17, 24, 39, 0.7);
+  --bg-card-hover: rgba(26, 34, 53, 0.85);
+  --bg-glass: rgba(255, 255, 255, 0.03);
+  --bg-glass-hover: rgba(255, 255, 255, 0.06);
+
+  /* Accent Gradient */
+  --accent-primary: #8b5cf6;
+  --accent-secondary: #06b6d4;
+  --accent-tertiary: #ec4899;
+  --accent-success: #10b981;
+  --accent-warning: #f59e0b;
+  --accent-danger: #ef4444;
+  --gradient-primary: linear-gradient(135deg, #8b5cf6 0%, #06b6d4 100%);
+  --gradient-warm: linear-gradient(135deg, #ec4899 0%, #f59e0b 100%);
+  --gradient-success: linear-gradient(135deg, #10b981 0%, #06b6d4 100%);
+  --gradient-danger: linear-gradient(135deg, #ef4444 0%, #ec4899 100%);
+  --gradient-bg: linear-gradient(180deg, #0a0e1a 0%, #111827 50%, #0a0e1a 100%);
+
+  /* Text */
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-tertiary: #64748b;
+  --text-accent: #8b5cf6;
+
+  /* Borders */
+  --border-primary: rgba(255, 255, 255, 0.06);
+  --border-hover: rgba(139, 92, 246, 0.3);
+  --border-active: rgba(139, 92, 246, 0.6);
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 15px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 0 30px rgba(139, 92, 246, 0.15);
+  --shadow-glow-cyan: 0 0 30px rgba(6, 182, 212, 0.15);
+
+  /* Sizing */
+  --sidebar-width: 260px;
+  --sidebar-collapsed: 72px;
+  --topbar-height: 64px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Font */
+  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+}
+
+/* --- Reset & Base --- */
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-family);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.6;
+  overflow-x: hidden;
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  background: none;
+  color: inherit;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+  outline: none;
+  border: none;
+  background: none;
+  color: inherit;
+}
+
+ul,
+ol {
+  list-style: none;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+/* --- Scrollbar --- */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-primary);
+}
+
+/* --- Layout --- */
+.app-layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+.main-area {
+  flex: 1;
+  margin-left: var(--sidebar-width);
+  transition: margin-left var(--transition-base);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.main-area.collapsed {
+  margin-left: var(--sidebar-collapsed);
+}
+
+.page-content {
+  flex: 1;
+  padding: 24px 32px;
+  margin-top: var(--topbar-height);
+  max-width: 1400px;
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* --- Glass Card --- */
+.glass-card {
+  background: var(--bg-card);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  transition: all var(--transition-base);
+}
+
+.glass-card:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-glow);
+}
+
+.glass-card-sm {
+  padding: 16px;
+  border-radius: var(--radius-md);
+}
+
+/* --- Buttons --- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.btn-primary {
+  background: var(--gradient-primary);
+  color: white;
+  box-shadow: 0 4px 15px rgba(139, 92, 246, 0.3);
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 25px rgba(139, 92, 246, 0.45);
+}
+
+.btn-secondary {
+  background: var(--bg-glass);
+  border: 1px solid var(--border-primary);
+  color: var(--text-primary);
+}
+
+.btn-secondary:hover {
+  background: var(--bg-glass-hover);
+  border-color: var(--border-hover);
+}
+
+.btn-ghost {
+  color: var(--text-secondary);
+}
+
+.btn-ghost:hover {
+  color: var(--text-primary);
+  background: var(--bg-glass);
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 0.8rem;
+}
+
+.btn-lg {
+  padding: 14px 28px;
+  font-size: 1rem;
+  border-radius: var(--radius-lg);
+}
+
+/* --- Inputs --- */
+.input-wrapper {
+  position: relative;
+}
+
+.input-field {
+  width: 100%;
+  padding: 12px 16px;
+  background: var(--bg-glass);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  transition: all var(--transition-fast);
+}
+
+.input-field::placeholder {
+  color: var(--text-tertiary);
+}
+
+.input-field:focus {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+}
+
+.input-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
+.input-field.has-icon {
+  padding-left: 42px;
+}
+
+/* --- Badge --- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badge-success {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--accent-success);
+}
+
+.badge-warning {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--accent-warning);
+}
+
+.badge-danger {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--accent-danger);
+}
+
+.badge-info {
+  background: rgba(6, 182, 212, 0.15);
+  color: var(--accent-secondary);
+}
+
+.badge-purple {
+  background: rgba(139, 92, 246, 0.15);
+  color: var(--accent-primary);
+}
+
+/* --- Grade Colors --- */
+.grade-a {
+  color: #10b981;
+}
+
+.grade-b {
+  color: #06b6d4;
+}
+
+.grade-c {
+  color: #f59e0b;
+}
+
+.grade-d {
+  color: #f97316;
+}
+
+.grade-f {
+  color: #ef4444;
+}
+
+.grade-bg-a {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(6, 182, 212, 0.1));
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.grade-bg-b {
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.2), rgba(139, 92, 246, 0.1));
+  border-color: rgba(6, 182, 212, 0.3);
+}
+
+.grade-bg-c {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(249, 115, 22, 0.1));
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.grade-bg-d {
+  background: linear-gradient(135deg, rgba(249, 115, 22, 0.2), rgba(239, 68, 68, 0.1));
+  border-color: rgba(249, 115, 22, 0.3);
+}
+
+.grade-bg-f {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.2), rgba(236, 72, 153, 0.1));
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+/* --- Section Headers --- */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.section-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.section-subtitle {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+/* --- Grid Layouts --- */
+.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+}
+
+.grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+.grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+
+/* --- Animations --- */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes pulse-glow {
+
+  0%,
+  100% {
+    box-shadow: 0 0 20px rgba(139, 92, 246, 0.2);
+  }
+
+  50% {
+    box-shadow: 0 0 40px rgba(139, 92, 246, 0.4);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes float {
+
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.5s ease-out forwards;
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s infinite;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* Staggered animation delays */
+.delay-1 {
+  animation-delay: 0.1s;
+  opacity: 0;
+}
+
+.delay-2 {
+  animation-delay: 0.2s;
+  opacity: 0;
+}
+
+.delay-3 {
+  animation-delay: 0.3s;
+  opacity: 0;
+}
+
+.delay-4 {
+  animation-delay: 0.4s;
+  opacity: 0;
+}
+
+.delay-5 {
+  animation-delay: 0.5s;
+  opacity: 0;
+}
+
+/* --- Meters / Progress --- */
+.meter-track {
+  width: 100%;
+  height: 8px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.meter-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.meter-low .meter-fill {
+  background: var(--gradient-success);
+}
+
+.meter-medium .meter-fill {
+  background: linear-gradient(90deg, #f59e0b, #f97316);
+}
+
+.meter-high .meter-fill {
+  background: var(--gradient-danger);
+}
+
+/* --- Tooltip --- */
+.tooltip-wrapper {
+  position: relative;
+}
+
+.tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+  z-index: 100;
+}
+
+.tooltip-wrapper:hover .tooltip {
+  opacity: 1;
+}
+
+/* --- Tab System --- */
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--bg-glass);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-primary);
+}
+
+.tab {
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: all var(--transition-fast);
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--text-primary);
+}
+
+.tab.active {
+  background: var(--accent-primary);
+  color: white;
+}
+
+/* --- Select Dropdown --- */
+.select-field {
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--bg-glass);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2394a3b8' viewBox='0 0 16 16'%3E%3Cpath d='m3.86 5.14 4 4a.2.2 0 0 0 .28 0l4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 32px;
+}
+
+.select-field:focus {
+  border-color: var(--accent-primary);
+}
+
+/* --- Toggle --- */
+.toggle {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  border-radius: var(--radius-full);
+  background: var(--bg-tertiary);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.toggle.active {
+  background: var(--accent-primary);
+}
+
+.toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: white;
+  transition: transform var(--transition-fast);
+}
+
+.toggle.active .toggle-knob {
+  transform: translateX(20px);
+}
+
+/* --- Slider --- */
+.range-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--bg-tertiary);
+  outline: none;
+}
+
+.range-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.4);
+}
+
+/* --- Page Backgrounds --- */
+.page-bg-mesh {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 600px 400px at 20% 20%, rgba(139, 92, 246, 0.06), transparent),
+    radial-gradient(ellipse 500px 300px at 80% 60%, rgba(6, 182, 212, 0.04), transparent),
+    radial-gradient(ellipse 400px 300px at 50% 90%, rgba(236, 72, 153, 0.03), transparent);
+}
+
+/* --- Responsive --- */
+@media (max-width: 1200px) {
+  .grid-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .main-area {
+    margin-left: 0;
+  }
+
+  .page-content {
+    padding: 16px;
+  }
+
+  .grid-2,
+  .grid-3,
+  .grid-4 {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  html {
+    font-size: 14px;
+  }
+}
+===
+/* =============================================
+   DropGravity Pro — Design System
+   Premium Dark Glassmorphism Theme
+   ============================================= */
+
+/* Force browser native elements to dark mode */
+:root {
+  color-scheme: dark;
+}
+
+/* --- CSS Custom Properties --- */
+:root {
+  /* Primary Colors */
+  --bg-primary: #0a0e1a;
+  --bg-secondary: #111827;
+  --bg-tertiary: #1a2235;
+  --bg-card: rgba(17, 24, 39, 0.7);
+  --bg-card-hover: rgba(26, 34, 53, 0.85);
+  --bg-glass: rgba(255, 255, 255, 0.03);
+  --bg-glass-hover: rgba(255, 255, 255, 0.06);
+
+  /* Accent Gradient */
+  --accent-primary: #8b5cf6;
+  --accent-secondary: #06b6d4;
+  --accent-tertiary: #ec4899;
+  --accent-success: #10b981;
+  --accent-warning: #f59e0b;
+  --accent-danger: #ef4444;
+  --gradient-primary: linear-gradient(135deg, #8b5cf6 0%, #06b6d4 100%);
+  --gradient-warm: linear-gradient(135deg, #ec4899 0%, #f59e0b 100%);
+  --gradient-success: linear-gradient(135deg, #10b981 0%, #06b6d4 100%);
+  --gradient-danger: linear-gradient(135deg, #ef4444 0%, #ec4899 100%);
+  --gradient-bg: linear-gradient(180deg, #0a0e1a 0%, #111827 50%, #0a0e1a 100%);
+
+  /* Text */
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-tertiary: #64748b;
+  --text-accent: #8b5cf6;
+
+  /* Borders */
+  --border-primary: rgba(255, 255, 255, 0.06);
+  --border-hover: rgba(139, 92, 246, 0.3);
+  --border-active: rgba(139, 92, 246, 0.6);
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 15px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 0 30px rgba(139, 92, 246, 0.15);
+  --shadow-glow-cyan: 0 0 30px rgba(6, 182, 212, 0.15);
+
+  /* Sizing */
+  --sidebar-width: 260px;
+  --sidebar-collapsed: 72px;
+  --topbar-height: 64px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Font */
+  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+}
+
+/* --- Reset & Base --- */
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-family);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.6;
+  overflow-x: hidden;
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  background: none;
+  color: inherit;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+  outline: none;
+  border: none;
+  background: none;
+  color: inherit;
+}
+
+ul,
+ol {
+  list-style: none;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+/* --- Scrollbar --- */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-primary);
+}
+
+/* --- Layout --- */
+.app-layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+.main-area {
+  flex: 1;
+  margin-left: var(--sidebar-width);
+  transition: margin-left var(--transition-base);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.main-area.collapsed {
+  margin-left: var(--sidebar-collapsed);
+}
+
+.page-content {
+  flex: 1;
+  padding: 24px 32px;
+  margin-top: var(--topbar-height);
+  max-width: 1400px;
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* --- Glass Card --- */
+.glass-card {
+  background: var(--bg-card);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  transition: all var(--transition-base);
+}
+
+.glass-card:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-glow);
+}
+
+.glass-card-sm {
+  padding: 16px;
+  border-radius: var(--radius-md);
+}
+
+/* --- Buttons --- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.btn-primary {
+  background: var(--gradient-primary);
+  color: white;
+  box-shadow: 0 4px 15px rgba(139, 92, 246, 0.3);
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 25px rgba(139, 92, 246, 0.45);
+}
+
+.btn-secondary {
+  background: var(--bg-glass);
+  border: 1px solid var(--border-primary);
+  color: var(--text-primary);
+}
+
+.btn-secondary:hover {
+  background: var(--bg-glass-hover);
+  border-color: var(--border-hover);
+}
+
+.btn-ghost {
+  color: var(--text-secondary);
+}
+
+.btn-ghost:hover {
+  color: var(--text-primary);
+  background: var(--bg-glass);
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 0.8rem;
+}
+
+.btn-lg {
+  padding: 14px 28px;
+  font-size: 1rem;
+  border-radius: var(--radius-lg);
+}
+
+/* --- Inputs --- */
+.input-wrapper {
+  position: relative;
+}
+
+.input-field {
+  width: 100%;
+  padding: 12px 16px;
+  background: var(--bg-glass);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  transition: all var(--transition-fast);
+}
+
+.input-field::placeholder {
+  color: var(--text-tertiary);
+}
+
+.input-field:focus {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+}
+
+.input-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
+.input-field.has-icon {
+  padding-left: 42px;
+}
+
+/* --- Badge --- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badge-success {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--accent-success);
+}
+
+.badge-warning {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--accent-warning);
+}
+
+.badge-danger {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--accent-danger);
+}
+
+.badge-info {
+  background: rgba(6, 182, 212, 0.15);
+  color: var(--accent-secondary);
+}
+
+.badge-purple {
+  background: rgba(139, 92, 246, 0.15);
+  color: var(--accent-primary);
+}
+
+/* --- Grade Colors --- */
+.grade-a {
+  color: #10b981;
+}
+
+.grade-b {
+  color: #06b6d4;
+}
+
+.grade-c {
+  color: #f59e0b;
+}
+
+.grade-d {
+  color: #f97316;
+}
+
+.grade-f {
+  color: #ef4444;
+}
+
+.grade-bg-a {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(6, 182, 212, 0.1));
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.grade-bg-b {
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.2), rgba(139, 92, 246, 0.1));
+  border-color: rgba(6, 182, 212, 0.3);
+}
+
+.grade-bg-c {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(249, 115, 22, 0.1));
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.grade-bg-d {
+  background: linear-gradient(135deg, rgba(249, 115, 22, 0.2), rgba(239, 68, 68, 0.1));
+  border-color: rgba(249, 115, 22, 0.3);
+}
+
+.grade-bg-f {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.2), rgba(236, 72, 153, 0.1));
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+/* --- Section Headers --- */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.section-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.section-subtitle {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+/* --- Grid Layouts --- */
+.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+}
+
+.grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+.grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+
+/* --- Animations --- */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes pulse-glow {
+
+  0%,
+  100% {
+    box-shadow: 0 0 20px rgba(139, 92, 246, 0.2);
+  }
+
+  50% {
+    box-shadow: 0 0 40px rgba(139, 92, 246, 0.4);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes float {
+
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.5s ease-out forwards;
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s infinite;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* Staggered animation delays */
+.delay-1 {
+  animation-delay: 0.1s;
+  opacity: 0;
+}
+
+.delay-2 {
+  animation-delay: 0.2s;
+  opacity: 0;
+}
+
+.delay-3 {
+  animation-delay: 0.3s;
+  opacity: 0;
+}
+
+.delay-4 {
+  animation-delay: 0.4s;
+  opacity: 0;
+}
+
+.delay-5 {
+  animation-delay: 0.5s;
+  opacity: 0;
+}
+
+/* --- Meters / Progress --- */
+.meter-track {
+  width: 100%;
+  height: 8px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.meter-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.meter-low .meter-fill {
+  background: var(--gradient-success);
+}
+
+.meter-medium .meter-fill {
+  background: linear-gradient(90deg, #f59e0b, #f97316);
+}
+
+.meter-high .meter-fill {
+  background: var(--gradient-danger);
+}
+
+/* --- Tooltip --- */
+.tooltip-wrapper {
+  position: relative;
+}
+
+.tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+  z-index: 100;
+}
+
+.tooltip-wrapper:hover .tooltip {
+  opacity: 1;
+}
+
+/* --- Tab System --- */
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--bg-glass);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-primary);
+}
+
+.tab {
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: all var(--transition-fast);
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--text-primary);
+}
+
+.tab.active {
+  background: var(--accent-primary);
+  color: white;
+}
+
+/* --- Select Dropdown --- */
+.select-field {
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--bg-glass);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2394a3b8' viewBox='0 0 16 16'%3E%3Cpath d='m3.86 5.14 4 4a.2.2 0 0 0 .28 0l4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 32px;
+}
+
+.select-field:focus {
+  border-color: var(--accent-primary);
+}
+
+.select-field option {
+  background: #111827;
+  color: #f1f5f9;
+  padding: 8px;
+}
+
+/* --- Toggle --- */
+.toggle {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  border-radius: var(--radius-full);
+  background: var(--bg-tertiary);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.toggle.active {
+  background: var(--accent-primary);
+}
+
+.toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: white;
+  transition: transform var(--transition-fast);
+}
+
+.toggle.active .toggle-knob {
+  transform: translateX(20px);
+}
+
+/* --- Slider --- */
+.range-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--bg-tertiary);
+  outline: none;
+}
+
+.range-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.4);
+}
+
+/* --- Page Backgrounds --- */
+.page-bg-mesh {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 600px 400px at 20% 20%, rgba(139, 92, 246, 0.06), transparent),
+    radial-gradient(ellipse 500px 300px at 80% 60%, rgba(6, 182, 212, 0.04), transparent),
+    radial-gradient(ellipse 400px 300px at 50% 90%, rgba(236, 72, 153, 0.03), transparent);
+}
+
+/* --- Responsive --- */
+@media (max-width: 1200px) {
+  .grid-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .main-area {
+    margin-left: 0;
+  }
+
+  .page-content {
+    padding: 16px;
+  }
+
+  .grid-2,
+  .grid-3,
+  .grid-4 {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  html {
+    font-size: 14px;
+  }
+}
+```
+
+Added `color-scheme: dark` at root level + explicit `option` styling. Native browser dropdown now renders with dark background.
+
+**#4 — Toast Notification System**
+
+```diff:Dashboard.jsx
+import { useState, useEffect, useCallback, useRef } from 'react';
+import {
+    LineChart, Line, AreaChart, Area, BarChart, Bar,
+    XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell
+} from 'recharts';
+import {
+    TrendingUp, TrendingDown, AlertTriangle, CheckCircle,
+    DollarSign, Target, Users, Zap, ShieldCheck,
+    MessageSquare, BarChart3, ArrowUpRight, ArrowDownRight, RefreshCw, Download,
+    Clock, Package, Loader2
+} from 'lucide-react';
+import { useLocation } from 'react-router-dom';
+import { dailyAGrade, trendChartData, demandForecast, revenueData } from '../data/mockData';
+import { gradeProduct, getGradeColor, getLetterGrade } from '../engine/gradingEngine';
+import { useAuth } from '../context/AuthContext';
+import { fetchMyProducts, gradeProductAPI } from '../services/api';
+import './Dashboard.css';
+
+const CustomTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+        return (
+            <div className="chart-tooltip">
+                <p className="tooltip-label">{label}</p>
+                {payload.map((p, i) => (
+                    <p key={i} style={{ color: p.color }}>
+                        {p.name}: {p.value}
+                    </p>
+                ))}
+            </div>
+        );
+    }
+    return null;
+};
+
+export default function Dashboard() {
+    const { isAuthenticated } = useAuth();
+    const location = useLocation();
+    const hasSaved = useRef(false);
+
+    // Get product from navigation state, fallback to dailyAGrade
+    const incomingProduct = location.state?.product;
+    const [product] = useState(incomingProduct || dailyAGrade);
+    const [savedProducts, setSavedProducts] = useState([]);
+    const [loadingSaved, setLoadingSaved] = useState(false);
+    const [grading, setGrading] = useState(false);
+
+    const loadSavedProducts = useCallback(async () => {
+        if (!isAuthenticated) return;
+        setLoadingSaved(true);
+        try {
+            const data = await fetchMyProducts();
+            setSavedProducts(data);
+        } catch (err) {
+            console.error('Failed to load saved products:', err);
+        } finally {
+            setLoadingSaved(false);
+        }
+    }, [isAuthenticated]);
+
+    // Load saved products on mount
+    useEffect(() => {
+        loadSavedProducts();
+    }, [loadSavedProducts]);
+
+    // Grade product via backend API (once per navigation)
+    useEffect(() => {
+        if (!isAuthenticated || !incomingProduct || hasSaved.current) return;
+
+        const saveToBackend = async () => {
+            hasSaved.current = true;
+            setGrading(true);
+            try {
+                await gradeProductAPI({
+                    productName: incomingProduct.name,
+                    profitMargin: incomingProduct.profitMargin,
+                    trendVelocity: incomingProduct.trendVelocity,
+                    adCompetition: incomingProduct.adCompetition,
+                    cpcForecast: incomingProduct.cpcForecast,
+                    supplierReliability: incomingProduct.supplierReliability,
+                    reviewSentiment: incomingProduct.reviewSentiment,
+                    marketSaturation: incomingProduct.marketSaturation,
+                });
+                // Refresh saved products after successful grade
+                await loadSavedProducts();
+            } catch (err) {
+                console.error('Failed to grade product:', err);
+            } finally {
+                setGrading(false);
+            }
+        };
+
+        saveToBackend();
+    }, [isAuthenticated, incomingProduct, loadSavedProducts]);
+
+    const analysis = gradeProduct({
+        profitMargin: product.profitMargin,
+        trendVelocity: product.trendVelocity,
+        adCompetition: product.adCompetition,
+        cpcForecast: product.cpcForecast,
+        supplierReliability: product.supplierReliability,
+        reviewSentiment: product.reviewSentiment,
+        marketSaturation: product.marketSaturation,
+    });
+
+    const riskPercentage = analysis.risk.score;
+    const saturationPercentage = product.marketSaturation;
+
+    const formatDate = (dateStr) => {
+        return new Date(dateStr).toLocaleDateString('en-US', {
+            month: 'short', day: 'numeric', year: 'numeric',
+            hour: '2-digit', minute: '2-digit',
+        });
+    };
+
+    const metricsCards = [
+        { label: 'Profit Margin', value: `${product.profitMargin}%`, icon: DollarSign, color: '#10b981', change: '+5.2%', up: true },
+        { label: 'Competition Index', value: `${product.adCompetition}/100`, icon: Users, color: '#06b6d4', change: '-2.1%', up: false },
+        { label: 'Trend Momentum', value: `${product.trendVelocity}/100`, icon: TrendingUp, color: '#8b5cf6', change: '+12.4%', up: true },
+        { label: 'CPC Estimate', value: `$${(product.cpcForecast * 0.05).toFixed(2)}`, icon: Target, color: '#f59e0b', change: '+0.8%', up: true },
+        { label: 'Conversion Prob.', value: '3.2%', icon: Zap, color: '#ec4899', change: '+0.4%', up: true },
+        { label: 'Supplier Trust', value: `${product.supplierReliability}/100`, icon: ShieldCheck, color: '#10b981', change: '+1.0%', up: true },
+    ];
+
+    return (
+        <div className="dashboard-page">
+            {/* Top Bar */}
+            <div className="dash-header animate-fade-in-up">
+                <div className="dash-header-left">
+                    <div className="dash-product-icon">{product.image}</div>
+                    <div>
+                        <h1 className="dash-product-name">{product.name}</h1>
+                        <div className="dash-product-meta">
+                            <span className="badge badge-info">{product.category}</span>
+                            <span className="badge badge-purple">{product.orders.toLocaleString()} orders</span>
+                        </div>
+                    </div>
+                </div>
+                <div className="dash-header-actions">
+                    <button className="btn btn-secondary btn-sm"><RefreshCw size={14} /> Re-Grade</button>
+                    <button className="btn btn-secondary btn-sm"><Download size={14} /> Export</button>
+                </div>
+            </div>
+
+            {/* Grade + Risk + Saturation + ROI */}
+            <div className="dash-top-row animate-fade-in-up delay-1">
+                {/* Grade Badge */}
+                <div className="grade-card glass-card">
+                    <div className="grade-label">Overall Grade</div>
+                    <div className="grade-circle" style={{ '--grade-color': getGradeColor(analysis.grade) }}>
+                        <span className="grade-letter">{analysis.grade}</span>
+                    </div>
+                    <div className="grade-score">{analysis.score}/100</div>
+                    <div className="grade-tag" style={{ color: getGradeColor(analysis.grade) }}>
+                        {analysis.grade === 'A' ? 'Excellent' : analysis.grade === 'B' ? 'Good' : analysis.grade === 'C' ? 'Average' : 'Below Average'}
+                    </div>
+                </div>
+
+                {/* Risk Meter */}
+                <div className="risk-card glass-card">
+                    <div className="risk-label">Risk Level</div>
+                    <div className="risk-gauge">
+                        <svg viewBox="0 0 120 70" className="risk-svg">
+                            <path d="M10 65 A50 50 0 0 1 110 65" fill="none" stroke="var(--bg-tertiary)" strokeWidth="8" strokeLinecap="round" />
+                            <path d="M10 65 A50 50 0 0 1 110 65" fill="none" stroke={analysis.risk.color} strokeWidth="8" strokeLinecap="round"
+                                strokeDasharray={`${(riskPercentage / 100) * 157} 157`}
+                                style={{ transition: 'stroke-dasharray 1s ease' }}
+                            />
+                        </svg>
+                        <div className="risk-value" style={{ color: analysis.risk.color }}>
+                            {analysis.risk.level}
+                        </div>
+                    </div>
+                    <div className="risk-score">{riskPercentage}% risk score</div>
+                </div>
+
+                {/* Saturation */}
+                <div className="saturation-card glass-card">
+                    <div className="sat-label">Market Saturation</div>
+                    <div className="sat-value">{saturationPercentage}%</div>
+                    <div className="meter-track">
+                        <div
+                            className={`meter-fill`}
+                            style={{
+                                width: `${saturationPercentage}%`,
+                                background: saturationPercentage < 40 ? 'var(--gradient-success)' :
+                                    saturationPercentage < 65 ? 'linear-gradient(90deg, #f59e0b, #f97316)' :
+                                        'var(--gradient-danger)'
+                            }}
+                        />
+                    </div>
+                    <div className="sat-status" style={{
+                        color: saturationPercentage < 40 ? '#10b981' : saturationPercentage < 65 ? '#f59e0b' : '#ef4444'
+                    }}>
+                        {saturationPercentage < 40 ? 'Low — Great opportunity' : saturationPercentage < 65 ? 'Moderate — Proceed carefully' : 'High — Risky market'}
+                    </div>
+                </div>
+
+                {/* ROI */}
+                <div className="roi-card glass-card">
+                    <div className="roi-label">Expected ROI</div>
+                    <div className="roi-value">
+                        {analysis.profitScenarios.likely.roi}%
+                        <ArrowUpRight size={20} className="roi-arrow" />
+                    </div>
+                    <div className="roi-scenarios">
+                        <div className="roi-scenario">
+                            <span className="rs-label">Best</span>
+                            <span className="rs-value" style={{ color: '#10b981' }}>{analysis.profitScenarios.best.roi}%</span>
+                        </div>
+                        <div className="roi-scenario">
+                            <span className="rs-label">Likely</span>
+                            <span className="rs-value" style={{ color: '#06b6d4' }}>{analysis.profitScenarios.likely.roi}%</span>
+                        </div>
+                        <div className="roi-scenario">
+                            <span className="rs-label">Worst</span>
+                            <span className="rs-value" style={{ color: '#ef4444' }}>{analysis.profitScenarios.worst.roi}%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Metrics Grid */}
+            <div className="metrics-grid animate-fade-in-up delay-2">
+                {metricsCards.map((m, i) => (
+                    <div key={i} className="metric-card glass-card glass-card-sm">
+                        <div className="metric-header">
+                            <div className="metric-icon" style={{ background: `${m.color}18`, color: m.color }}>
+                                <m.icon size={18} />
+                            </div>
+                            <div className={`metric-change ${m.up ? 'up' : 'down'}`}>
+                                {m.up ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
+                                {m.change}
+                            </div>
+                        </div>
+                        <div className="metric-value">{m.value}</div>
+                        <div className="metric-label">{m.label}</div>
+                    </div>
+                ))}
+            </div>
+
+            {/* Charts Row */}
+            <div className="charts-row animate-fade-in-up delay-3">
+                {/* Trend Chart */}
+                <div className="chart-card glass-card">
+                    <div className="chart-header">
+                        <h3><TrendingUp size={16} /> Google Trend</h3>
+                    </div>
+                    <div className="chart-body">
+                        <ResponsiveContainer width="100%" height={240}>
+                            <AreaChart data={trendChartData}>
+                                <defs>
+                                    <linearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
+                                        <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                                <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                <Tooltip content={<CustomTooltip />} />
+                                <Area type="monotone" dataKey="interest" stroke="#8b5cf6" fill="url(#trendGradient)" strokeWidth={2} name="Interest" />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                {/* Competition Spike */}
+                <div className="chart-card glass-card">
+                    <div className="chart-header">
+                        <h3><Users size={16} /> Competition</h3>
+                    </div>
+                    <div className="chart-body">
+                        <ResponsiveContainer width="100%" height={240}>
+                            <AreaChart data={trendChartData}>
+                                <defs>
+                                    <linearGradient id="compGradient" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3} />
+                                        <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                                <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                <Tooltip content={<CustomTooltip />} />
+                                <Area type="monotone" dataKey="competition" stroke="#06b6d4" fill="url(#compGradient)" strokeWidth={2} name="Competition" />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+            </div>
+
+            {/* Bottom Charts */}
+            <div className="charts-row animate-fade-in-up delay-4">
+                {/* Revenue Breakdown */}
+                <div className="chart-card glass-card">
+                    <div className="chart-header">
+                        <h3><DollarSign size={16} /> Cost vs Revenue</h3>
+                    </div>
+                    <div className="chart-body">
+                        <ResponsiveContainer width="100%" height={240}>
+                            <BarChart data={revenueData} barSize={40}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                                <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} unit="$" />
+                                <Tooltip content={<CustomTooltip />} />
+                                <Bar dataKey="value" radius={[6, 6, 0, 0]} name="Amount">
+                                    {revenueData.map((entry, index) => (
+                                        <Cell key={index} fill={entry.fill} />
+                                    ))}
+                                </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                {/* Demand Forecast */}
+                <div className="chart-card glass-card">
+                    <div className="chart-header">
+                        <h3><BarChart3 size={16} /> 30-Day Demand Forecast</h3>
+                    </div>
+                    <div className="chart-body">
+                        <ResponsiveContainer width="100%" height={240}>
+                            <LineChart data={demandForecast}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                                <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                <Tooltip content={<CustomTooltip />} />
+                                <Line type="monotone" dataKey="actual" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 4, fill: '#8b5cf6' }} name="Actual" connectNulls={false} />
+                                <Line type="monotone" dataKey="forecast" stroke="#06b6d4" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 4, fill: '#06b6d4' }} name="Forecast" />
+                            </LineChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+            </div>
+
+            {/* Saved Products */}
+            <div className="saved-products-section animate-fade-in-up delay-4">
+                <div className="glass-card">
+                    <div className="saved-header">
+                        <h3 className="suggestions-title">
+                            <Package size={18} /> Your Saved Products
+                        </h3>
+                        {isAuthenticated && (
+                            <button
+                                className="btn btn-secondary btn-sm"
+                                onClick={loadSavedProducts}
+                                disabled={loadingSaved}
+                            >
+                                <RefreshCw size={14} className={loadingSaved ? 'spin-icon' : ''} />
+                                Refresh
+                            </button>
+                        )}
+                    </div>
+
+                    {!isAuthenticated ? (
+                        <div className="saved-empty">
+                            <ShieldCheck size={32} />
+                            <p>Login to see your graded products</p>
+                        </div>
+                    ) : loadingSaved ? (
+                        <div className="saved-loading">
+                            <Loader2 size={24} className="spin-icon" />
+                            <p>Loading your products...</p>
+                        </div>
+                    ) : savedProducts.length === 0 ? (
+                        <div className="saved-empty">
+                            <Package size={32} />
+                            <p>No products graded yet</p>
+                            <span>Grade a product to see it here</span>
+                        </div>
+                    ) : (
+                        <div className="saved-products-list">
+                            {savedProducts.map((sp) => (
+                                <div key={sp._id} className="saved-product-row">
+                                    <div className="sp-grade-badge" style={{
+                                        background: `${getGradeColor(sp.grade)}22`,
+                                        color: getGradeColor(sp.grade),
+                                        border: `1px solid ${getGradeColor(sp.grade)}44`,
+                                    }}>
+                                        {sp.grade}
+                                    </div>
+                                    <div className="sp-info">
+                                        <span className="sp-name">{sp.productName}</span>
+                                        <span className="sp-date">
+                                            <Clock size={11} />
+                                            {formatDate(sp.createdAt)}
+                                        </span>
+                                    </div>
+                                    <div className="sp-score">
+                                        <span className="sp-score-value">{sp.score}</span>
+                                        <span className="sp-score-label">/100</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* AI Suggestions */}
+            <div className="suggestions-section animate-fade-in-up delay-5">
+                <div className="glass-card">
+                    <h3 className="suggestions-title">
+                        <Zap size={18} /> AI Insights & Suggestions
+                    </h3>
+                    <div className="suggestions-list">
+                        {analysis.suggestions.map((s, i) => (
+                            <div key={i} className="suggestion-item">
+                                <div className="suggestion-icon">
+                                    {i === 0 ? <CheckCircle size={16} /> : <AlertTriangle size={16} />}
+                                </div>
+                                <p>{s}</p>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Weak Metrics */}
+                {analysis.weakMetrics.length > 0 && (
+                    <div className="glass-card weak-metrics-card">
+                        <h3 className="suggestions-title">
+                            <AlertTriangle size={18} /> Flagged Weak Metrics
+                        </h3>
+                        <div className="weak-metrics-list">
+                            {analysis.weakMetrics.map((wm, i) => (
+                                <div key={i} className="weak-metric-item">
+                                    <span className="wm-name">{wm.name}</span>
+                                    <div className="wm-bar-track">
+                                        <div className="wm-bar-fill" style={{ width: `${wm.value}%`, background: 'var(--gradient-danger)' }} />
+                                    </div>
+                                    <span className="wm-value">{wm.value}/100</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+===
+import { useState, useEffect, useCallback, useRef } from 'react';
+import {
+    LineChart, Line, AreaChart, Area, BarChart, Bar,
+    XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell
+} from 'recharts';
+import {
+    TrendingUp, TrendingDown, AlertTriangle, CheckCircle, CheckCircle2,
+    DollarSign, Target, Users, Zap, ShieldCheck,
+    MessageSquare, BarChart3, ArrowUpRight, ArrowDownRight, RefreshCw, Download,
+    Clock, Package, Loader2, XCircle
+} from 'lucide-react';
+import { useLocation } from 'react-router-dom';
+import { dailyAGrade, trendChartData, demandForecast, revenueData } from '../data/mockData';
+import { gradeProduct, getGradeColor, getLetterGrade } from '../engine/gradingEngine';
+import { useAuth } from '../context/AuthContext';
+import { fetchMyProducts, gradeProductAPI } from '../services/api';
+import './Dashboard.css';
+
+const CustomTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+        return (
+            <div className="chart-tooltip">
+                <p className="tooltip-label">{label}</p>
+                {payload.map((p, i) => (
+                    <p key={i} style={{ color: p.color }}>
+                        {p.name}: {p.value}
+                    </p>
+                ))}
+            </div>
+        );
+    }
+    return null;
+};
+
+export default function Dashboard() {
+    const { isAuthenticated } = useAuth();
+    const location = useLocation();
+    const hasSaved = useRef(false);
+
+    // Get product from navigation state, fallback to dailyAGrade
+    const incomingProduct = location.state?.product;
+    const [product] = useState(incomingProduct || dailyAGrade);
+    const [savedProducts, setSavedProducts] = useState([]);
+    const [loadingSaved, setLoadingSaved] = useState(false);
+    const [grading, setGrading] = useState(false);
+    const [regrading, setRegrading] = useState(false);
+    const [toast, setToast] = useState({ message: '', type: 'success', visible: false });
+
+    const showToast = (message, type = 'success') => {
+        setToast({ message, type, visible: true });
+        setTimeout(() => setToast(prev => ({ ...prev, visible: false })), 3000);
+    };
+
+    const loadSavedProducts = useCallback(async () => {
+        if (!isAuthenticated) return;
+        setLoadingSaved(true);
+        try {
+            const data = await fetchMyProducts();
+            setSavedProducts(data);
+        } catch (err) {
+            console.error('Failed to load saved products:', err);
+        } finally {
+            setLoadingSaved(false);
+        }
+    }, [isAuthenticated]);
+
+    // Load saved products on mount
+    useEffect(() => {
+        loadSavedProducts();
+    }, [loadSavedProducts]);
+
+    // Grade product via backend API (once per navigation)
+    useEffect(() => {
+        if (!isAuthenticated || !incomingProduct || hasSaved.current) return;
+
+        const saveToBackend = async () => {
+            hasSaved.current = true;
+            setGrading(true);
+            try {
+                await gradeProductAPI({
+                    productName: incomingProduct.name,
+                    profitMargin: incomingProduct.profitMargin,
+                    trendVelocity: incomingProduct.trendVelocity,
+                    adCompetition: incomingProduct.adCompetition,
+                    cpcForecast: incomingProduct.cpcForecast,
+                    supplierReliability: incomingProduct.supplierReliability,
+                    reviewSentiment: incomingProduct.reviewSentiment,
+                    marketSaturation: incomingProduct.marketSaturation,
+                });
+                // Refresh saved products after successful grade
+                await loadSavedProducts();
+                showToast(`${incomingProduct.name} graded & saved successfully!`, 'success');
+            } catch (err) {
+                console.error('Failed to grade product:', err);
+                showToast('Failed to grade product. Please try again.', 'error');
+            } finally {
+                setGrading(false);
+            }
+        };
+
+        saveToBackend();
+    }, [isAuthenticated, incomingProduct, loadSavedProducts]);
+
+    const analysis = gradeProduct({
+        profitMargin: product.profitMargin,
+        trendVelocity: product.trendVelocity,
+        adCompetition: product.adCompetition,
+        cpcForecast: product.cpcForecast,
+        supplierReliability: product.supplierReliability,
+        reviewSentiment: product.reviewSentiment,
+        marketSaturation: product.marketSaturation,
+    });
+
+    const riskPercentage = analysis.risk.score;
+    const saturationPercentage = product.marketSaturation;
+
+    const handleReGrade = async () => {
+        if (regrading || !isAuthenticated) return;
+        setRegrading(true);
+        try {
+            await gradeProductAPI({
+                productName: product.name,
+                profitMargin: product.profitMargin,
+                trendVelocity: product.trendVelocity,
+                adCompetition: product.adCompetition,
+                cpcForecast: product.cpcForecast,
+                supplierReliability: product.supplierReliability,
+                reviewSentiment: product.reviewSentiment,
+                marketSaturation: product.marketSaturation,
+            });
+            await loadSavedProducts();
+            showToast(`${product.name} re-graded successfully!`, 'success');
+        } catch (err) {
+            console.error('Re-grade failed:', err);
+            showToast('Re-grade failed. Please try again.', 'error');
+        } finally {
+            setRegrading(false);
+        }
+    };
+
+    const formatDate = (dateStr) => {
+        return new Date(dateStr).toLocaleDateString('en-US', {
+            month: 'short', day: 'numeric', year: 'numeric',
+            hour: '2-digit', minute: '2-digit',
+        });
+    };
+
+    const metricsCards = [
+        { label: 'Profit Margin', value: `${product.profitMargin}%`, icon: DollarSign, color: '#10b981', change: '+5.2%', up: true },
+        { label: 'Competition Index', value: `${product.adCompetition}/100`, icon: Users, color: '#06b6d4', change: '-2.1%', up: false },
+        { label: 'Trend Momentum', value: `${product.trendVelocity}/100`, icon: TrendingUp, color: '#8b5cf6', change: '+12.4%', up: true },
+        { label: 'CPC Estimate', value: `$${(product.cpcForecast * 0.05).toFixed(2)}`, icon: Target, color: '#f59e0b', change: '+0.8%', up: true },
+        { label: 'Conversion Prob.', value: '3.2%', icon: Zap, color: '#ec4899', change: '+0.4%', up: true },
+        { label: 'Supplier Trust', value: `${product.supplierReliability}/100`, icon: ShieldCheck, color: '#10b981', change: '+1.0%', up: true },
+    ];
+
+    return (
+        <div className="dashboard-page">
+            {/* Top Bar */}
+            <div className="dash-header animate-fade-in-up">
+                <div className="dash-header-left">
+                    <div className="dash-product-icon">{product.image}</div>
+                    <div>
+                        <h1 className="dash-product-name">{product.name}</h1>
+                        <div className="dash-product-meta">
+                            <span className="badge badge-info">{product.category}</span>
+                            <span className="badge badge-purple">{product.orders.toLocaleString()} orders</span>
+                        </div>
+                    </div>
+                </div>
+                <div className="dash-header-actions">
+                    <button className="btn btn-secondary btn-sm" onClick={handleReGrade} disabled={regrading}>
+                        {regrading ? <Loader2 size={14} className="spin-icon" /> : <RefreshCw size={14} />}
+                        {regrading ? 'Re-Grading...' : 'Re-Grade'}
+                    </button>
+                    <button className="btn btn-secondary btn-sm"><Download size={14} /> Export</button>
+                </div>
+            </div>
+
+            {/* Grade + Risk + Saturation + ROI */}
+            <div className="dash-top-row animate-fade-in-up delay-1">
+                {/* Grade Badge */}
+                <div className="grade-card glass-card">
+                    <div className="grade-label">Overall Grade</div>
+                    <div className="grade-circle" style={{ '--grade-color': getGradeColor(analysis.grade) }}>
+                        <span className="grade-letter">{analysis.grade}</span>
+                    </div>
+                    <div className="grade-score">{analysis.score}/100</div>
+                    <div className="grade-tag" style={{ color: getGradeColor(analysis.grade) }}>
+                        {analysis.grade === 'A' ? 'Excellent' : analysis.grade === 'B' ? 'Good' : analysis.grade === 'C' ? 'Average' : 'Below Average'}
+                    </div>
+                </div>
+
+                {/* Risk Meter */}
+                <div className="risk-card glass-card">
+                    <div className="risk-label">Risk Level</div>
+                    <div className="risk-gauge">
+                        <svg viewBox="0 0 120 70" className="risk-svg">
+                            <path d="M10 65 A50 50 0 0 1 110 65" fill="none" stroke="var(--bg-tertiary)" strokeWidth="8" strokeLinecap="round" />
+                            <path d="M10 65 A50 50 0 0 1 110 65" fill="none" stroke={analysis.risk.color} strokeWidth="8" strokeLinecap="round"
+                                strokeDasharray={`${(riskPercentage / 100) * 157} 157`}
+                                style={{ transition: 'stroke-dasharray 1s ease' }}
+                            />
+                        </svg>
+                        <div className="risk-value" style={{ color: analysis.risk.color }}>
+                            {analysis.risk.level}
+                        </div>
+                    </div>
+                    <div className="risk-score">{riskPercentage}% risk score</div>
+                </div>
+
+                {/* Saturation */}
+                <div className="saturation-card glass-card">
+                    <div className="sat-label">Market Saturation</div>
+                    <div className="sat-value">{saturationPercentage}%</div>
+                    <div className="meter-track">
+                        <div
+                            className={`meter-fill`}
+                            style={{
+                                width: `${saturationPercentage}%`,
+                                background: saturationPercentage < 40 ? 'var(--gradient-success)' :
+                                    saturationPercentage < 65 ? 'linear-gradient(90deg, #f59e0b, #f97316)' :
+                                        'var(--gradient-danger)'
+                            }}
+                        />
+                    </div>
+                    <div className="sat-status" style={{
+                        color: saturationPercentage < 40 ? '#10b981' : saturationPercentage < 65 ? '#f59e0b' : '#ef4444'
+                    }}>
+                        {saturationPercentage < 40 ? 'Low — Great opportunity' : saturationPercentage < 65 ? 'Moderate — Proceed carefully' : 'High — Risky market'}
+                    </div>
+                </div>
+
+                {/* ROI */}
+                <div className="roi-card glass-card">
+                    <div className="roi-label">Expected ROI</div>
+                    <div className="roi-value">
+                        {analysis.profitScenarios.likely.roi}%
+                        <ArrowUpRight size={20} className="roi-arrow" />
+                    </div>
+                    <div className="roi-scenarios">
+                        <div className="roi-scenario">
+                            <span className="rs-label">Best</span>
+                            <span className="rs-value" style={{ color: '#10b981' }}>{analysis.profitScenarios.best.roi}%</span>
+                        </div>
+                        <div className="roi-scenario">
+                            <span className="rs-label">Likely</span>
+                            <span className="rs-value" style={{ color: '#06b6d4' }}>{analysis.profitScenarios.likely.roi}%</span>
+                        </div>
+                        <div className="roi-scenario">
+                            <span className="rs-label">Worst</span>
+                            <span className="rs-value" style={{ color: '#ef4444' }}>{analysis.profitScenarios.worst.roi}%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Metrics Grid */}
+            <div className="metrics-grid animate-fade-in-up delay-2">
+                {metricsCards.map((m, i) => (
+                    <div key={i} className="metric-card glass-card glass-card-sm">
+                        <div className="metric-header">
+                            <div className="metric-icon" style={{ background: `${m.color}18`, color: m.color }}>
+                                <m.icon size={18} />
+                            </div>
+                            <div className={`metric-change ${m.up ? 'up' : 'down'}`}>
+                                {m.up ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
+                                {m.change}
+                            </div>
+                        </div>
+                        <div className="metric-value">{m.value}</div>
+                        <div className="metric-label">{m.label}</div>
+                    </div>
+                ))}
+            </div>
+
+            {/* Charts Row */}
+            <div className="charts-row animate-fade-in-up delay-3">
+                {/* Trend Chart */}
+                <div className="chart-card glass-card">
+                    <div className="chart-header">
+                        <h3><TrendingUp size={16} /> Google Trend</h3>
+                    </div>
+                    <div className="chart-body">
+                        <ResponsiveContainer width="100%" height={240}>
+                            <AreaChart data={trendChartData}>
+                                <defs>
+                                    <linearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
+                                        <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                                <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                <Tooltip content={<CustomTooltip />} />
+                                <Area type="monotone" dataKey="interest" stroke="#8b5cf6" fill="url(#trendGradient)" strokeWidth={2} name="Interest" />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                {/* Competition Spike */}
+                <div className="chart-card glass-card">
+                    <div className="chart-header">
+                        <h3><Users size={16} /> Competition</h3>
+                    </div>
+                    <div className="chart-body">
+                        <ResponsiveContainer width="100%" height={240}>
+                            <AreaChart data={trendChartData}>
+                                <defs>
+                                    <linearGradient id="compGradient" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3} />
+                                        <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                                <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                <Tooltip content={<CustomTooltip />} />
+                                <Area type="monotone" dataKey="competition" stroke="#06b6d4" fill="url(#compGradient)" strokeWidth={2} name="Competition" />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+            </div>
+
+            {/* Bottom Charts */}
+            <div className="charts-row animate-fade-in-up delay-4">
+                {/* Revenue Breakdown */}
+                <div className="chart-card glass-card">
+                    <div className="chart-header">
+                        <h3><DollarSign size={16} /> Cost vs Revenue</h3>
+                    </div>
+                    <div className="chart-body">
+                        <ResponsiveContainer width="100%" height={240}>
+                            <BarChart data={revenueData} barSize={40}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                                <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} unit="$" />
+                                <Tooltip content={<CustomTooltip />} />
+                                <Bar dataKey="value" radius={[6, 6, 0, 0]} name="Amount">
+                                    {revenueData.map((entry, index) => (
+                                        <Cell key={index} fill={entry.fill} />
+                                    ))}
+                                </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                {/* Demand Forecast */}
+                <div className="chart-card glass-card">
+                    <div className="chart-header">
+                        <h3><BarChart3 size={16} /> 30-Day Demand Forecast</h3>
+                    </div>
+                    <div className="chart-body">
+                        <ResponsiveContainer width="100%" height={240}>
+                            <LineChart data={demandForecast}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                                <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                <Tooltip content={<CustomTooltip />} />
+                                <Line type="monotone" dataKey="actual" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 4, fill: '#8b5cf6' }} name="Actual" connectNulls={false} />
+                                <Line type="monotone" dataKey="forecast" stroke="#06b6d4" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 4, fill: '#06b6d4' }} name="Forecast" />
+                            </LineChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+            </div>
+
+            {/* Saved Products */}
+            <div className="saved-products-section animate-fade-in-up delay-4">
+                <div className="glass-card">
+                    <div className="saved-header">
+                        <h3 className="suggestions-title">
+                            <Package size={18} /> Your Saved Products
+                        </h3>
+                        {isAuthenticated && (
+                            <button
+                                className="btn btn-secondary btn-sm"
+                                onClick={loadSavedProducts}
+                                disabled={loadingSaved}
+                            >
+                                <RefreshCw size={14} className={loadingSaved ? 'spin-icon' : ''} />
+                                Refresh
+                            </button>
+                        )}
+                    </div>
+
+                    {!isAuthenticated ? (
+                        <div className="saved-empty">
+                            <ShieldCheck size={32} />
+                            <p>Login to see your graded products</p>
+                        </div>
+                    ) : loadingSaved ? (
+                        <div className="saved-loading">
+                            <Loader2 size={24} className="spin-icon" />
+                            <p>Loading your products...</p>
+                        </div>
+                    ) : savedProducts.length === 0 ? (
+                        <div className="saved-empty">
+                            <Package size={32} />
+                            <p>No products graded yet</p>
+                            <span>Grade a product to see it here</span>
+                        </div>
+                    ) : (
+                        <div className="saved-products-list">
+                            {savedProducts.map((sp) => (
+                                <div key={sp._id} className="saved-product-row">
+                                    <div className="sp-grade-badge" style={{
+                                        background: `${getGradeColor(sp.grade)}33`,
+                                        color: getGradeColor(sp.grade),
+                                        border: `1px solid ${getGradeColor(sp.grade)}66`,
+                                    }}>
+                                        {sp.grade}
+                                    </div>
+                                    <div className="sp-info">
+                                        <span className="sp-name">{sp.productName}</span>
+                                        <span className="sp-date">
+                                            <Clock size={11} />
+                                            {formatDate(sp.createdAt)}
+                                        </span>
+                                    </div>
+                                    <div className="sp-score">
+                                        <span className="sp-score-value">{sp.score}</span>
+                                        <span className="sp-score-label">/100</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* AI Suggestions */}
+            <div className="suggestions-section animate-fade-in-up delay-5">
+                <div className="glass-card">
+                    <h3 className="suggestions-title">
+                        <Zap size={18} /> AI Insights & Suggestions
+                    </h3>
+                    <div className="suggestions-list">
+                        {analysis.suggestions.map((s, i) => (
+                            <div key={i} className="suggestion-item">
+                                <div className="suggestion-icon">
+                                    {i === 0 ? <CheckCircle size={16} /> : <AlertTriangle size={16} />}
+                                </div>
+                                <p>{s}</p>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Weak Metrics */}
+                {analysis.weakMetrics.length > 0 && (
+                    <div className="glass-card weak-metrics-card">
+                        <h3 className="suggestions-title">
+                            <AlertTriangle size={18} /> Flagged Weak Metrics
+                        </h3>
+                        <div className="weak-metrics-list">
+                            {analysis.weakMetrics.map((wm, i) => (
+                                <div key={i} className="weak-metric-item">
+                                    <span className="wm-name">{wm.name}</span>
+                                    <div className="wm-bar-track">
+                                        <div className="wm-bar-fill" style={{ width: `${wm.value}%`, background: 'var(--gradient-danger)' }} />
+                                    </div>
+                                    <span className="wm-value">{wm.value}/100</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Toast Notification */}
+            <div className={`toast-container ${toast.visible ? 'visible' : ''}`}>
+                <div className={`toast toast-${toast.type}`}>
+                    {toast.type === 'success' ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
+                    <span>{toast.message}</span>
+                </div>
+            </div>
+        </div>
+    );
+}
+```
+
+Added a lightweight toast system (no external library). Shows success/error toasts that auto-dismiss after 3 seconds with slide-in animation.
+
+**#5 — Re-Grade Button Loading State**
+
+Re-Grade now actually calls the API. Shows `Loader2` spinner + "Re-Grading..." text + `disabled` state while processing. Prevents spam-clicking.
+
+```diff:Dashboard.css
+/* Dashboard Styles */
+
+.dashboard-page {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    position: relative;
+    z-index: 1;
+}
+
+/* Header */
+.dash-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.dash-header-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.dash-product-icon {
+    font-size: 2.5rem;
+    width: 56px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-glass);
+    border-radius: var(--radius-md);
+}
+
+.dash-product-name {
+    font-size: 1.4rem;
+    font-weight: 800;
+}
+
+.dash-product-meta {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.dash-header-actions {
+    display: flex;
+    gap: 8px;
+}
+
+/* Top Row */
+.dash-top-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+}
+
+/* Grade Card */
+.grade-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 8px;
+}
+
+.grade-label {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+}
+
+.grade-circle {
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    border: 4px solid var(--grade-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 30px color-mix(in srgb, var(--grade-color) 30%, transparent);
+    animation: pulse-glow 2.5s infinite;
+}
+
+.grade-letter {
+    font-size: 3rem;
+    font-weight: 900;
+    color: var(--grade-color);
+    line-height: 1;
+}
+
+.grade-score {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.grade-tag {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Risk Card */
+.risk-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 4px;
+}
+
+.risk-label {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+}
+
+.risk-gauge {
+    position: relative;
+    width: 120px;
+    height: 70px;
+}
+
+.risk-svg {
+    width: 100%;
+    height: 100%;
+}
+
+.risk-value {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 1.1rem;
+    font-weight: 800;
+}
+
+.risk-score {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+}
+
+/* Saturation */
+.saturation-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.sat-label {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+}
+
+.sat-value {
+    font-size: 2rem;
+    font-weight: 900;
+}
+
+.sat-status {
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+/* ROI */
+.roi-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.roi-label {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+}
+
+.roi-value {
+    font-size: 2rem;
+    font-weight: 900;
+    color: var(--accent-success);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.roi-arrow {
+    color: var(--accent-success);
+}
+
+.roi-scenarios {
+    display: flex;
+    gap: 16px;
+}
+
+.roi-scenario {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.rs-label {
+    font-size: 0.65rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+}
+
+.rs-value {
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+/* Metrics */
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 14px;
+}
+
+.metric-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.metric-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.metric-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.metric-change {
+    font-size: 0.72rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.metric-change.up {
+    color: var(--accent-success);
+}
+
+.metric-change.down {
+    color: var(--accent-danger);
+}
+
+.metric-value {
+    font-size: 1.2rem;
+    font-weight: 800;
+}
+
+.metric-label {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+}
+
+/* Charts */
+.charts-row {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+}
+
+.chart-card {
+    overflow: hidden;
+}
+
+.chart-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.chart-header h3 {
+    font-size: 0.9rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-primary);
+}
+
+.chart-body {
+    margin: 0 -12px;
+}
+
+.chart-tooltip {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-sm);
+    padding: 8px 12px;
+    font-size: 0.75rem;
+}
+
+.tooltip-label {
+    font-weight: 600;
+    margin-bottom: 4px;
+    color: var(--text-primary);
+}
+
+/* Suggestions */
+.suggestions-section {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.suggestions-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.suggestions-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.suggestion-item {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.suggestion-icon {
+    flex-shrink: 0;
+    color: var(--accent-warning);
+    margin-top: 2px;
+}
+
+.suggestion-item:first-child .suggestion-icon {
+    color: var(--accent-success);
+}
+
+/* Weak Metrics */
+.weak-metrics-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.weak-metric-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.wm-name {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    min-width: 110px;
+}
+
+.wm-bar-track {
+    flex: 1;
+    height: 6px;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-full);
+    overflow: hidden;
+}
+
+.wm-bar-fill {
+    height: 100%;
+    border-radius: var(--radius-full);
+    transition: width 1s ease;
+}
+
+.wm-value {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--accent-danger);
+    min-width: 50px;
+    text-align: right;
+}
+
+/* Saved Products */
+.saved-products-section {
+    margin-top: -8px;
+}
+
+.saved-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.saved-header .suggestions-title {
+    margin-bottom: 0;
+}
+
+.saved-products-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.saved-product-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 16px;
+    background: var(--bg-glass);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-md);
+    transition: all var(--transition-fast);
+    cursor: default;
+}
+
+.saved-product-row:hover {
+    background: var(--bg-glass-hover);
+    border-color: var(--border-hover);
+}
+
+.sp-grade-badge {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 0.95rem;
+    flex-shrink: 0;
+}
+
+.sp-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.sp-name {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sp-date {
+    font-size: 0.72rem;
+    color: var(--text-tertiary);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.sp-score {
+    display: flex;
+    align-items: baseline;
+    gap: 2px;
+    flex-shrink: 0;
+}
+
+.sp-score-value {
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+
+.sp-score-label {
+    font-size: 0.7rem;
+    color: var(--text-tertiary);
+    font-weight: 600;
+}
+
+.saved-empty,
+.saved-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 40px 20px;
+    color: var(--text-tertiary);
+    text-align: center;
+}
+
+.saved-empty p,
+.saved-loading p {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.saved-empty span {
+    font-size: 0.78rem;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.spin-icon {
+    animation: spin 1s linear infinite;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+    .metrics-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    .dash-top-row {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .metrics-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .dash-top-row {
+        grid-template-columns: 1fr;
+    }
+
+    .charts-row {
+        grid-template-columns: 1fr;
+    }
+
+    .suggestions-section {
+        grid-template-columns: 1fr;
+    }
+}
+===
+/* Dashboard Styles */
+
+.dashboard-page {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    position: relative;
+    z-index: 1;
+}
+
+/* Header */
+.dash-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.dash-header-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.dash-product-icon {
+    font-size: 2.5rem;
+    width: 56px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-glass);
+    border-radius: var(--radius-md);
+}
+
+.dash-product-name {
+    font-size: 1.4rem;
+    font-weight: 800;
+}
+
+.dash-product-meta {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.dash-header-actions {
+    display: flex;
+    gap: 8px;
+}
+
+/* Top Row */
+.dash-top-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+}
+
+/* Grade Card */
+.grade-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 8px;
+}
+
+.grade-label {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+}
+
+.grade-circle {
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    border: 4px solid var(--grade-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 30px color-mix(in srgb, var(--grade-color) 30%, transparent);
+    animation: pulse-glow 2.5s infinite;
+}
+
+.grade-letter {
+    font-size: 3rem;
+    font-weight: 900;
+    color: var(--grade-color);
+    line-height: 1;
+}
+
+.grade-score {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.grade-tag {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Risk Card */
+.risk-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 4px;
+}
+
+.risk-label {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+}
+
+.risk-gauge {
+    position: relative;
+    width: 120px;
+    height: 70px;
+}
+
+.risk-svg {
+    width: 100%;
+    height: 100%;
+}
+
+.risk-value {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 1.1rem;
+    font-weight: 800;
+}
+
+.risk-score {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+}
+
+/* Saturation */
+.saturation-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.sat-label {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+}
+
+.sat-value {
+    font-size: 2rem;
+    font-weight: 900;
+}
+
+.sat-status {
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+/* ROI */
+.roi-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.roi-label {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+}
+
+.roi-value {
+    font-size: 2rem;
+    font-weight: 900;
+    color: var(--accent-success);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.roi-arrow {
+    color: var(--accent-success);
+}
+
+.roi-scenarios {
+    display: flex;
+    gap: 16px;
+}
+
+.roi-scenario {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.rs-label {
+    font-size: 0.65rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+}
+
+.rs-value {
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+/* Metrics */
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 14px;
+}
+
+.metric-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.metric-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.metric-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.metric-change {
+    font-size: 0.72rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.metric-change.up {
+    color: var(--accent-success);
+}
+
+.metric-change.down {
+    color: var(--accent-danger);
+}
+
+.metric-value {
+    font-size: 1.2rem;
+    font-weight: 800;
+}
+
+.metric-label {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+}
+
+/* Charts */
+.charts-row {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+}
+
+.chart-card {
+    overflow: hidden;
+}
+
+.chart-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.chart-header h3 {
+    font-size: 0.9rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-primary);
+}
+
+.chart-body {
+    margin: 0 -12px;
+}
+
+.chart-tooltip {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-sm);
+    padding: 8px 12px;
+    font-size: 0.75rem;
+}
+
+.tooltip-label {
+    font-weight: 600;
+    margin-bottom: 4px;
+    color: var(--text-primary);
+}
+
+/* Suggestions */
+.suggestions-section {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.suggestions-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.suggestions-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.suggestion-item {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.suggestion-icon {
+    flex-shrink: 0;
+    color: var(--accent-warning);
+    margin-top: 2px;
+}
+
+.suggestion-item:first-child .suggestion-icon {
+    color: var(--accent-success);
+}
+
+/* Weak Metrics */
+.weak-metrics-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.weak-metric-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.wm-name {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    min-width: 110px;
+}
+
+.wm-bar-track {
+    flex: 1;
+    height: 6px;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-full);
+    overflow: hidden;
+}
+
+.wm-bar-fill {
+    height: 100%;
+    border-radius: var(--radius-full);
+    transition: width 1s ease;
+}
+
+.wm-value {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--accent-danger);
+    min-width: 50px;
+    text-align: right;
+}
+
+/* Saved Products */
+.saved-products-section {
+    margin-top: -8px;
+}
+
+.saved-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.saved-header .suggestions-title {
+    margin-bottom: 0;
+}
+
+.saved-products-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.saved-product-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 16px;
+    background: var(--bg-glass);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-md);
+    transition: all var(--transition-fast);
+    cursor: default;
+}
+
+.saved-product-row:hover {
+    background: var(--bg-glass-hover);
+    border-color: var(--border-hover);
+}
+
+.sp-grade-badge {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 0.95rem;
+    flex-shrink: 0;
+}
+
+.sp-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.sp-name {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sp-date {
+    font-size: 0.72rem;
+    color: var(--text-tertiary);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.sp-score {
+    display: flex;
+    align-items: baseline;
+    gap: 2px;
+    flex-shrink: 0;
+}
+
+.sp-score-value {
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+
+.sp-score-label {
+    font-size: 0.7rem;
+    color: var(--text-tertiary);
+    font-weight: 600;
+}
+
+.saved-empty,
+.saved-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 40px 20px;
+    color: var(--text-tertiary);
+    text-align: center;
+}
+
+.saved-empty p,
+.saved-loading p {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.saved-empty span {
+    font-size: 0.78rem;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.spin-icon {
+    animation: spin 1s linear infinite;
+}
+
+/* Toast Notifications */
+.toast-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 10000;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(16px);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.toast-container.visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.toast {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 20px;
+    border-radius: var(--radius-md);
+    font-size: 0.85rem;
+    font-weight: 600;
+    backdrop-filter: blur(20px);
+    box-shadow: var(--shadow-lg);
+    min-width: 280px;
+    max-width: 420px;
+}
+
+.toast-success {
+    background: rgba(16, 185, 129, 0.15);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    color: #10b981;
+}
+
+.toast-error {
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #ef4444;
+}
+
+/* Disabled button */
+.btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none !important;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+    .metrics-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    .dash-top-row {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .metrics-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .dash-top-row {
+        grid-template-columns: 1fr;
+    }
+
+    .charts-row {
+        grid-template-columns: 1fr;
+    }
+
+    .suggestions-section {
+        grid-template-columns: 1fr;
+    }
+}
+```
+
+**#7 — Grade Badge Contrast**
+
+Increased `sp-grade-badge` opacity from `22`→`33` (bg) and `44`→`66` (border) for better visibility on dark backgrounds.
+
+---
+
+### 🟡 Minor Polish
+
+**#8 — Sidebar Upgrade Panel**
+
+```diff:Sidebar.jsx
+import { useState } from 'react';
+import { NavLink } from 'react-router-dom';
+import {
+    LayoutDashboard, Home, Search, Settings, ChevronLeft,
+    ChevronRight, Zap, TrendingUp, Crown, HelpCircle
+} from 'lucide-react';
+import './Sidebar.css';
+
+const navItems = [
+    { path: '/', icon: Home, label: 'Home' },
+    { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+    { path: '/finder', icon: Search, label: 'Product Finder' },
+    { path: '/settings', icon: Settings, label: 'Settings' },
+];
+
+export default function Sidebar({ collapsed, onToggle }) {
+    return (
+        <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
+            <div className="sidebar-inner">
+                {/* Logo */}
+                <div className="sidebar-logo">
+                    <div className="logo-icon">
+                        <Zap size={22} />
+                    </div>
+                    {!collapsed && (
+                        <div className="logo-text">
+                            <span className="logo-name">DropGravity</span>
+                            <span className="logo-badge">PRO</span>
+                        </div>
+                    )}
+                </div>
+
+                {/* Nav Links */}
+                <nav className="sidebar-nav">
+                    <div className="nav-section-label">{!collapsed && 'MAIN MENU'}</div>
+                    {navItems.map((item) => (
+                        <NavLink
+                            key={item.path}
+                            to={item.path}
+                            end={item.path === '/'}
+                            className={({ isActive }) =>
+                                `nav-item ${isActive ? 'active' : ''}`
+                            }
+                        >
+                            <item.icon size={20} />
+                            {!collapsed && <span>{item.label}</span>}
+                        </NavLink>
+                    ))}
+                </nav>
+
+                {/* Upgrade CTA */}
+                {!collapsed && (
+                    <div className="sidebar-upgrade">
+                        <div className="upgrade-card">
+                            <Crown size={20} className="upgrade-icon" />
+                            <div className="upgrade-text">
+                                <strong>Upgrade to Pro</strong>
+                                <span>Unlimited scans & AI insights</span>
+                            </div>
+                            <button className="btn btn-primary btn-sm" style={{ width: '100%' }}>
+                                Upgrade Now
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Collapse Toggle */}
+                <button className="sidebar-toggle" onClick={onToggle}>
+                    {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+                </button>
+            </div>
+        </aside>
+    );
+}
+===
+import { useState } from 'react';
+import { NavLink } from 'react-router-dom';
+import {
+    LayoutDashboard, Home, Search, Settings, ChevronLeft,
+    ChevronRight, Zap, TrendingUp, Crown, HelpCircle
+} from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import './Sidebar.css';
+
+const navItems = [
+    { path: '/', icon: Home, label: 'Home' },
+    { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+    { path: '/finder', icon: Search, label: 'Product Finder' },
+    { path: '/settings', icon: Settings, label: 'Settings' },
+];
+
+export default function Sidebar({ collapsed, onToggle }) {
+    const { user } = useAuth();
+    const showUpgrade = !user?.plan || user.plan === 'free';
+
+    return (
+        <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
+            <div className="sidebar-inner">
+                {/* Logo */}
+                <div className="sidebar-logo">
+                    <div className="logo-icon">
+                        <Zap size={22} />
+                    </div>
+                    {!collapsed && (
+                        <div className="logo-text">
+                            <span className="logo-name">DropGravity</span>
+                            <span className="logo-badge">PRO</span>
+                        </div>
+                    )}
+                </div>
+
+                {/* Nav Links */}
+                <nav className="sidebar-nav">
+                    <div className="nav-section-label">{!collapsed && 'MAIN MENU'}</div>
+                    {navItems.map((item) => (
+                        <NavLink
+                            key={item.path}
+                            to={item.path}
+                            end={item.path === '/'}
+                            className={({ isActive }) =>
+                                `nav-item ${isActive ? 'active' : ''}`
+                            }
+                        >
+                            <item.icon size={20} />
+                            {!collapsed && <span>{item.label}</span>}
+                        </NavLink>
+                    ))}
+                </nav>
+
+                {/* Upgrade CTA */}
+                {!collapsed && showUpgrade && (
+                    <div className="sidebar-upgrade">
+                        <div className="upgrade-card">
+                            <Crown size={20} className="upgrade-icon" />
+                            <div className="upgrade-text">
+                                <strong>Upgrade to Pro</strong>
+                                <span>Unlimited scans & AI insights</span>
+                            </div>
+                            <button className="btn btn-primary btn-sm" style={{ width: '100%' }}>
+                                Upgrade Now
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Collapse Toggle */}
+                <button className="sidebar-toggle" onClick={onToggle}>
+                    {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+                </button>
+            </div>
+        </aside>
+    );
+}
+```
+
+Now checks `user.plan` — upgrade card only shows for `free` plan users. Hidden for `pro`/`agency`/`enterprise`.
+
+**#9 — "Free Plan" Not Hardcoded** ✅
+
+Verified: [Topbar.jsx](file:///c:/Users/dasar/DropGravity%20Pro/src/components/Topbar.jsx#L47) reads `user?.plan` from `AuthContext`, which comes from the [User model](file:///c:/Users/dasar/DropGravity%20Pro/server/models/User.js#L16-L20) `plan` field (default: `'free'`). No code change needed.
+
+---
+
+## Browser Verification
+
+All fixes tested end-to-end in browser:
+
+````carousel
+![Finder empty state and dropdown dark theme test](C:/Users/dasar/.gemini/antigravity/brain/d204bb8b-7f75-43bd-941a-4f1ef08e9720/finder_empty_state_1771908493851.webp)
+<!-- slide -->
+![Dashboard toast, Re-Grade loading, and refresh resilience test](C:/Users/dasar/.gemini/antigravity/brain/d204bb8b-7f75-43bd-941a-4f1ef08e9720/dashboard_fixes_test_1771908726388.webp)
+````
+
+| Issue | Status | Test Result |
+|-------|--------|-------------|
+| #1 Finder blank screen | ✅ Fixed | Empty state UI renders correctly |
+| #2 Dashboard refresh | ✅ Safe | F5 reload shows default product |
+| #3 Dropdown white bg | ✅ Fixed | Dark theme applied to options |
+| #4 No save feedback | ✅ Fixed | Success toast appears |
+| #5 Re-Grade no loading | ✅ Fixed | Spinner + disabled state |
+| #6 Empty state weak | ✅ Fixed | Icon + message + CTA |
+| #7 Badge contrast | ✅ Fixed | Opacity increased |
+| #8 Upgrade always visible | ✅ Fixed | Conditional on plan |
+| #9 Free Plan hardcoded? | ✅ Clean | Reads from backend |

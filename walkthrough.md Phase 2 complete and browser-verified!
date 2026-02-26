@@ -1,0 +1,4927 @@
+# Walkthrough — Phase 2: Dynamic Product Engine + Comparison
+
+## What Changed
+
+Transformed DropGravity Pro from a static 8-product demo into a dynamic SaaS with:
+- **Any keyword** generates realistic products (AI-simulated engine)
+- **Versioned grading** tracks re-grade history
+- **Side-by-side comparison** of up to 3 products
+- **API-driven** everything — no more static mock filtering
+
+---
+
+## Architecture
+
+```mermaid
+graph TD
+    A["Finder.jsx"] -->|"POST /api/products/analyze"| B["server/index.js"]
+    B --> C["productGenerator.js"]
+    C --> D["gradingEngine.js"]
+    B -->|"graded products"| A
+    A -->|"compare 2-3"| E["Compare.jsx"]
+    A -->|"click card"| F["Dashboard.jsx"]
+    F -->|"POST /api/grade"| B
+    B -->|"versioned save"| G["MongoDB Product"]
+```
+
+---
+
+## New Files
+
+| File | Purpose |
+|------|---------|
+| [productGenerator.js](file:///c:/Users/dasar/DropGravity%20Pro/server/engine/productGenerator.js) | Seeded PRNG, category detection, 6 products per keyword |
+| [gradingEngine.js](file:///c:/Users/dasar/DropGravity%20Pro/server/engine/gradingEngine.js) | Shared grading logic (was duplicated) |
+| [Compare.jsx](file:///c:/Users/dasar/DropGravity%20Pro/src/pages/Compare.jsx) | Side-by-side comparison with metric bars + verdict |
+| [Compare.css](file:///c:/Users/dasar/DropGravity%20Pro/src/pages/Compare.css) | Comparison page styling |
+
+## Modified Files
+
+```diff:Product.js
+import mongoose from 'mongoose';
+
+const productSchema = new mongoose.Schema({
+    userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: [true, 'userId is required'],
+        index: true,
+    },
+    productName: {
+        type: String,
+        required: [true, 'productName is required'],
+        trim: true,
+    },
+    metrics: {
+        type: Object,
+        required: [true, 'metrics are required'],
+    },
+    score: {
+        type: Number,
+        required: [true, 'score is required'],
+    },
+    grade: {
+        type: String,
+        required: [true, 'grade is required'],
+        enum: ['A', 'B', 'C', 'D', 'F'],
+    },
+    createdAt: {
+        type: Date,
+        default: Date.now,
+    },
+});
+
+const Product = mongoose.model('Product', productSchema);
+
+export default Product;
+===
+import mongoose from 'mongoose';
+
+const productSchema = new mongoose.Schema({
+    userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: [true, 'userId is required'],
+        index: true,
+    },
+    productName: {
+        type: String,
+        required: [true, 'productName is required'],
+        trim: true,
+    },
+    metrics: {
+        type: Object,
+        required: [true, 'metrics are required'],
+    },
+    score: {
+        type: Number,
+        required: [true, 'score is required'],
+    },
+    grade: {
+        type: String,
+        required: [true, 'grade is required'],
+        enum: ['A', 'B', 'C', 'D', 'F'],
+    },
+    version: {
+        type: Number,
+        default: 1,
+    },
+    createdAt: {
+        type: Date,
+        default: Date.now,
+    },
+});
+
+// Compound index: prevents exact duplicates, allows versioned re-grades
+productSchema.index({ userId: 1, productName: 1, version: 1 }, { unique: true });
+
+const Product = mongoose.model('Product', productSchema);
+
+export default Product;
+
+```
+```diff:index.js
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import mongoose from 'mongoose';
+import authRoutes from './routes/auth.js';
+import verifyToken from './middleware/verifyToken.js';
+import Product from './models/Product.js';
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// ---- MongoDB Connection ----
+const MONGO_URI = process.env.MONGO_URI;
+
+await mongoose.connect(MONGO_URI);
+console.log('✅ MongoDB connected');
+
+// ---- Mock Data ----
+const products = [
+    { id: 1, name: 'LED Sunset Projection Lamp', image: '🌅', price: 12.99, sellPrice: 34.99, category: 'Home Decor', profitMargin: 73, trendVelocity: 88, adCompetition: 25, cpcForecast: 18, supplierReliability: 85, reviewSentiment: 91, marketSaturation: 20, shippingDays: 8, orders: 15420, trend: 'rising' },
+    { id: 2, name: 'Portable Neck Fan 3.0', image: '🌀', price: 5.50, sellPrice: 24.99, category: 'Electronics', profitMargin: 78, trendVelocity: 82, adCompetition: 35, cpcForecast: 22, supplierReliability: 88, reviewSentiment: 85, marketSaturation: 30, shippingDays: 10, orders: 28300, trend: 'rising' },
+    { id: 3, name: 'Smart Posture Corrector', image: '🧍', price: 8.20, sellPrice: 29.99, category: 'Health', profitMargin: 72, trendVelocity: 76, adCompetition: 42, cpcForecast: 28, supplierReliability: 80, reviewSentiment: 78, marketSaturation: 35, shippingDays: 12, orders: 9800, trend: 'stable' },
+    { id: 4, name: 'Mini Thermal Printer', image: '🖨️', price: 15.00, sellPrice: 44.99, category: 'Electronics', profitMargin: 67, trendVelocity: 70, adCompetition: 50, cpcForecast: 35, supplierReliability: 82, reviewSentiment: 80, marketSaturation: 40, shippingDays: 14, orders: 6200, trend: 'rising' },
+    { id: 5, name: 'Magnetic Phone Mount', image: '📱', price: 2.80, sellPrice: 19.99, category: 'Accessories', profitMargin: 86, trendVelocity: 45, adCompetition: 75, cpcForecast: 55, supplierReliability: 90, reviewSentiment: 70, marketSaturation: 72, shippingDays: 7, orders: 42100, trend: 'declining' },
+    { id: 6, name: 'Galaxy Star Projector', image: '🌌', price: 11.00, sellPrice: 39.99, category: 'Home Decor', profitMargin: 72, trendVelocity: 80, adCompetition: 38, cpcForecast: 25, supplierReliability: 78, reviewSentiment: 88, marketSaturation: 33, shippingDays: 10, orders: 18700, trend: 'rising' },
+    { id: 7, name: 'Electric Scalp Massager', image: '💆', price: 6.50, sellPrice: 27.99, category: 'Health', profitMargin: 77, trendVelocity: 55, adCompetition: 60, cpcForecast: 42, supplierReliability: 75, reviewSentiment: 72, marketSaturation: 55, shippingDays: 11, orders: 11400, trend: 'stable' },
+    { id: 8, name: 'Resin Fidget Cube Pro', image: '🎲', price: 3.20, sellPrice: 18.99, category: 'Toys', profitMargin: 83, trendVelocity: 30, adCompetition: 80, cpcForecast: 65, supplierReliability: 70, reviewSentiment: 55, marketSaturation: 78, shippingDays: 9, orders: 51200, trend: 'declining' },
+];
+
+// ---- Grading Engine ----
+function gradeProduct(metrics) {
+    const weights = { profitMargin: 0.25, trendVelocity: 0.20, adCompetition: 0.15, cpcForecast: 0.15, supplierReliability: 0.10, reviewSentiment: 0.10, marketSaturation: 0.05 };
+    const norm = {
+        profitMargin: metrics.profitMargin,
+        trendVelocity: metrics.trendVelocity,
+        adCompetition: 100 - metrics.adCompetition,
+        cpcForecast: 100 - metrics.cpcForecast,
+        supplierReliability: metrics.supplierReliability,
+        reviewSentiment: metrics.reviewSentiment,
+        marketSaturation: 100 - metrics.marketSaturation,
+    };
+    let score = 0;
+    for (const [key, weight] of Object.entries(weights)) { score += norm[key] * weight; }
+    score = Math.round(score * 10) / 10;
+    const grade = score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : score >= 60 ? 'D' : 'F';
+    return { score, grade };
+}
+
+// ---- Auth Routes ----
+app.use('/api/auth', authRoutes);
+
+// ---- Public Routes ----
+app.get('/api/products/trending', (req, res) => {
+    const enriched = products.map(p => ({
+        ...p,
+        ...gradeProduct(p),
+    }));
+    res.json(enriched);
+});
+
+app.get('/api/products/search', (req, res) => {
+    const { q, niche, minMargin } = req.query;
+    let results = [...products];
+    if (q) results = results.filter(p => p.name.toLowerCase().includes(q.toLowerCase()));
+    if (niche && niche !== 'All Niches') results = results.filter(p => p.category === niche);
+    if (minMargin) results = results.filter(p => p.profitMargin >= Number(minMargin));
+    const enriched = results.map(p => ({ ...p, ...gradeProduct(p) }));
+    res.json(enriched);
+});
+
+app.get('/api/grade/daily', (req, res) => {
+    const best = products.reduce((a, b) => (gradeProduct(a).score > gradeProduct(b).score ? a : b));
+    res.json({ ...best, ...gradeProduct(best) });
+});
+
+app.get('/api/trends', (req, res) => {
+    res.json([
+        { day: 'Jan 1', interest: 30, competition: 10 },
+        { day: 'Jan 5', interest: 35, competition: 12 },
+        { day: 'Jan 10', interest: 42, competition: 15 },
+        { day: 'Jan 15', interest: 55, competition: 18 },
+        { day: 'Jan 20', interest: 68, competition: 22 },
+        { day: 'Jan 25', interest: 72, competition: 28 },
+        { day: 'Feb 1', interest: 80, competition: 30 },
+        { day: 'Feb 5', interest: 85, competition: 32 },
+        { day: 'Feb 10', interest: 78, competition: 35 },
+        { day: 'Feb 15', interest: 82, competition: 33 },
+        { day: 'Feb 20', interest: 90, competition: 36 },
+        { day: 'Feb 23', interest: 88, competition: 38 },
+    ]);
+});
+
+// ---- Protected Routes ----
+app.post('/api/grade', verifyToken, async (req, res) => {
+    try {
+        const { productName, ...metrics } = req.body;
+        const result = gradeProduct(metrics);
+
+        const product = new Product({
+            userId: req.userId,
+            productName: productName || 'Unnamed Product',
+            metrics,
+            score: result.score,
+            grade: result.grade,
+        });
+
+        await product.save();
+
+        return res.json(product);
+    } catch (err) {
+        console.error('Grade error:', err.message);
+        return res.status(500).json({ error: 'Failed to grade product.' });
+    }
+});
+
+app.get('/api/products/my', verifyToken, async (req, res) => {
+    try {
+        const products = await Product.find({ userId: req.userId })
+            .sort({ createdAt: -1 });
+
+        return res.json(products);
+    } catch (err) {
+        console.error('Fetch history error:', err.message);
+        return res.status(500).json({ error: 'Failed to fetch product history.' });
+    }
+});
+
+// ---- Start Server ----
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+    console.log(`🚀 DropGravity Pro API running on port ${PORT}`);
+});
+===
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import mongoose from 'mongoose';
+import authRoutes from './routes/auth.js';
+import verifyToken from './middleware/verifyToken.js';
+import Product from './models/Product.js';
+import { gradeProduct } from './engine/gradingEngine.js';
+import { generateProducts } from './engine/productGenerator.js';
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// ---- MongoDB Connection ----
+const MONGO_URI = process.env.MONGO_URI;
+
+await mongoose.connect(MONGO_URI);
+console.log('✅ MongoDB connected');
+
+// ---- Fallback Trending Products (for /api/products/trending when no dynamic data) ----
+const fallbackProducts = [
+    { id: 1, name: 'LED Sunset Projection Lamp', image: '🌅', price: 12.99, sellPrice: 34.99, category: 'Home Decor', profitMargin: 73, trendVelocity: 88, adCompetition: 25, cpcForecast: 18, supplierReliability: 85, reviewSentiment: 91, marketSaturation: 20, shippingDays: 8, orders: 15420, trend: 'rising' },
+    { id: 2, name: 'Portable Neck Fan 3.0', image: '🌀', price: 5.50, sellPrice: 24.99, category: 'Electronics', profitMargin: 78, trendVelocity: 82, adCompetition: 35, cpcForecast: 22, supplierReliability: 88, reviewSentiment: 85, marketSaturation: 30, shippingDays: 10, orders: 28300, trend: 'rising' },
+    { id: 3, name: 'Smart Posture Corrector', image: '🧍', price: 8.20, sellPrice: 29.99, category: 'Health', profitMargin: 72, trendVelocity: 76, adCompetition: 42, cpcForecast: 28, supplierReliability: 80, reviewSentiment: 78, marketSaturation: 35, shippingDays: 12, orders: 9800, trend: 'stable' },
+    { id: 4, name: 'Mini Thermal Printer', image: '🖨️', price: 15.00, sellPrice: 44.99, category: 'Electronics', profitMargin: 67, trendVelocity: 70, adCompetition: 50, cpcForecast: 35, supplierReliability: 82, reviewSentiment: 80, marketSaturation: 40, shippingDays: 14, orders: 6200, trend: 'rising' },
+    { id: 5, name: 'Magnetic Phone Mount', image: '📱', price: 2.80, sellPrice: 19.99, category: 'Accessories', profitMargin: 86, trendVelocity: 45, adCompetition: 75, cpcForecast: 55, supplierReliability: 90, reviewSentiment: 70, marketSaturation: 72, shippingDays: 7, orders: 42100, trend: 'declining' },
+    { id: 6, name: 'Galaxy Star Projector', image: '🌌', price: 11.00, sellPrice: 39.99, category: 'Home Decor', profitMargin: 72, trendVelocity: 80, adCompetition: 38, cpcForecast: 25, supplierReliability: 78, reviewSentiment: 88, marketSaturation: 33, shippingDays: 10, orders: 18700, trend: 'rising' },
+    { id: 7, name: 'Electric Scalp Massager', image: '💆', price: 6.50, sellPrice: 27.99, category: 'Health', profitMargin: 77, trendVelocity: 55, adCompetition: 60, cpcForecast: 42, supplierReliability: 75, reviewSentiment: 72, marketSaturation: 55, shippingDays: 11, orders: 11400, trend: 'stable' },
+    { id: 8, name: 'Resin Fidget Cube Pro', image: '🎲', price: 3.20, sellPrice: 18.99, category: 'Toys', profitMargin: 83, trendVelocity: 30, adCompetition: 80, cpcForecast: 65, supplierReliability: 70, reviewSentiment: 55, marketSaturation: 78, shippingDays: 9, orders: 51200, trend: 'declining' },
+];
+
+// ---- Auth Routes ----
+app.use('/api/auth', authRoutes);
+
+// ---- Public Routes ----
+app.get('/api/products/trending', (req, res) => {
+    const enriched = fallbackProducts.map(p => ({
+        ...p,
+        ...gradeProduct(p),
+    }));
+    res.json(enriched);
+});
+
+app.get('/api/products/search', (req, res) => {
+    const { q, niche, minMargin } = req.query;
+    let results = [...fallbackProducts];
+    if (q) results = results.filter(p => p.name.toLowerCase().includes(q.toLowerCase()));
+    if (niche && niche !== 'All Niches') results = results.filter(p => p.category === niche);
+    if (minMargin) results = results.filter(p => p.profitMargin >= Number(minMargin));
+    const enriched = results.map(p => ({ ...p, ...gradeProduct(p) }));
+    res.json(enriched);
+});
+
+app.get('/api/grade/daily', (req, res) => {
+    const best = fallbackProducts.reduce((a, b) => (gradeProduct(a).score > gradeProduct(b).score ? a : b));
+    res.json({ ...best, ...gradeProduct(best) });
+});
+
+app.get('/api/trends', (req, res) => {
+    res.json([
+        { day: 'Jan 1', interest: 30, competition: 10 },
+        { day: 'Jan 5', interest: 35, competition: 12 },
+        { day: 'Jan 10', interest: 42, competition: 15 },
+        { day: 'Jan 15', interest: 55, competition: 18 },
+        { day: 'Jan 20', interest: 68, competition: 22 },
+        { day: 'Jan 25', interest: 72, competition: 28 },
+        { day: 'Feb 1', interest: 80, competition: 30 },
+        { day: 'Feb 5', interest: 85, competition: 32 },
+        { day: 'Feb 10', interest: 78, competition: 35 },
+        { day: 'Feb 15', interest: 82, competition: 33 },
+        { day: 'Feb 20', interest: 90, competition: 36 },
+        { day: 'Feb 23', interest: 88, competition: 38 },
+    ]);
+});
+
+// ---- Dynamic Product Analysis (AI-Simulated) ----
+app.post('/api/products/analyze', verifyToken, (req, res) => {
+    try {
+        const { keyword } = req.body;
+
+        if (!keyword || !keyword.trim()) {
+            return res.status(400).json({ error: 'Keyword is required.' });
+        }
+
+        const products = generateProducts(keyword.trim(), 6);
+        res.json(products);
+    } catch (err) {
+        console.error('Analyze error:', err.message);
+        return res.status(500).json({ error: 'Failed to analyze products.' });
+    }
+});
+
+// ---- Protected Routes ----
+app.post('/api/grade', verifyToken, async (req, res) => {
+    try {
+        const { productName, ...metrics } = req.body;
+        const result = gradeProduct(metrics);
+        const name = productName || 'Unnamed Product';
+
+        // Find the latest version for this user + product combo
+        const latest = await Product.findOne({
+            userId: req.userId,
+            productName: name,
+        }).sort({ version: -1 });
+
+        const nextVersion = latest ? latest.version + 1 : 1;
+
+        const product = new Product({
+            userId: req.userId,
+            productName: name,
+            metrics,
+            score: result.score,
+            grade: result.grade,
+            version: nextVersion,
+        });
+
+        await product.save();
+
+        return res.json(product);
+    } catch (err) {
+        console.error('Grade error:', err.message);
+        return res.status(500).json({ error: 'Failed to grade product.' });
+    }
+});
+
+app.get('/api/products/my', verifyToken, async (req, res) => {
+    try {
+        const products = await Product.find({ userId: req.userId })
+            .sort({ createdAt: -1 });
+
+        return res.json(products);
+    } catch (err) {
+        console.error('Fetch history error:', err.message);
+        return res.status(500).json({ error: 'Failed to fetch product history.' });
+    }
+});
+
+// ---- Start Server ----
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+    console.log(`🚀 DropGravity Pro API running on port ${PORT}`);
+});
+
+```
+```diff:api.js
+const API_BASE = 'http://localhost:5000';
+
+// ---- Token helpers ----
+export function getToken() {
+    return localStorage.getItem('dg_token');
+}
+
+export function getUser() {
+    const raw = localStorage.getItem('dg_user');
+    return raw ? JSON.parse(raw) : null;
+}
+
+function saveAuth(data) {
+    localStorage.setItem('dg_token', data.token);
+    localStorage.setItem('dg_user', JSON.stringify(data.user));
+}
+
+export function clearAuth() {
+    localStorage.removeItem('dg_token');
+    localStorage.removeItem('dg_user');
+}
+
+// ---- Authenticated fetch wrapper ----
+async function authFetch(path, options = {}) {
+    const token = getToken();
+    const headers = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...options.headers,
+    };
+
+    const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+
+    if (res.status === 401) {
+        clearAuth();
+        window.dispatchEvent(new Event('dg:logout'));
+    }
+
+    return res;
+}
+
+// ---- Auth endpoints ----
+export async function login(email, password) {
+    const res = await fetch(`${API_BASE}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Login failed');
+    saveAuth(data);
+    return data;
+}
+
+export async function register(email, password) {
+    const res = await fetch(`${API_BASE}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Registration failed');
+    saveAuth(data);
+    return data;
+}
+
+export function logout() {
+    clearAuth();
+    window.dispatchEvent(new Event('dg:logout'));
+}
+
+// ---- Product endpoints ----
+export async function fetchMyProducts() {
+    const res = await authFetch('/api/products/my');
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to fetch products');
+    }
+    return res.json();
+}
+
+export async function gradeProductAPI(productData) {
+    const res = await authFetch('/api/grade', {
+        method: 'POST',
+        body: JSON.stringify(productData),
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to grade product');
+    }
+    return res.json();
+}
+===
+const API_BASE = 'http://localhost:5000';
+
+// ---- Token helpers ----
+export function getToken() {
+    return localStorage.getItem('dg_token');
+}
+
+export function getUser() {
+    const raw = localStorage.getItem('dg_user');
+    return raw ? JSON.parse(raw) : null;
+}
+
+function saveAuth(data) {
+    localStorage.setItem('dg_token', data.token);
+    localStorage.setItem('dg_user', JSON.stringify(data.user));
+}
+
+export function clearAuth() {
+    localStorage.removeItem('dg_token');
+    localStorage.removeItem('dg_user');
+}
+
+// ---- Authenticated fetch wrapper ----
+async function authFetch(path, options = {}) {
+    const token = getToken();
+    const headers = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...options.headers,
+    };
+
+    const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+
+    if (res.status === 401) {
+        clearAuth();
+        window.dispatchEvent(new Event('dg:logout'));
+    }
+
+    return res;
+}
+
+// ---- Auth endpoints ----
+export async function login(email, password) {
+    const res = await fetch(`${API_BASE}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Login failed');
+    saveAuth(data);
+    return data;
+}
+
+export async function register(email, password) {
+    const res = await fetch(`${API_BASE}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Registration failed');
+    saveAuth(data);
+    return data;
+}
+
+export function logout() {
+    clearAuth();
+    window.dispatchEvent(new Event('dg:logout'));
+}
+
+// ---- Product endpoints ----
+export async function fetchMyProducts() {
+    const res = await authFetch('/api/products/my');
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to fetch products');
+    }
+    return res.json();
+}
+
+export async function gradeProductAPI(productData) {
+    const res = await authFetch('/api/grade', {
+        method: 'POST',
+        body: JSON.stringify(productData),
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to grade product');
+    }
+    return res.json();
+}
+
+export async function analyzeProducts(keyword) {
+    const res = await authFetch('/api/products/analyze', {
+        method: 'POST',
+        body: JSON.stringify({ keyword }),
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to analyze products');
+    }
+    return res.json();
+}
+
+export async function fetchTrendingProducts() {
+    const res = await fetch(`${API_BASE}/api/products/trending`);
+    if (!res.ok) {
+        throw new Error('Failed to fetch trending products');
+    }
+    return res.json();
+}
+
+```
+```diff:Finder.jsx
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+    Search, SlidersHorizontal, Upload, Link, Filter,
+    ChevronDown, ChevronUp, ArrowRight, TrendingUp, Star,
+    X, Grid, List
+} from 'lucide-react';
+import { trendingProducts, niches, regions } from '../data/mockData';
+import { getGradeColor } from '../engine/gradingEngine';
+import './Finder.css';
+
+export default function Finder() {
+    const navigate = useNavigate();
+    const [searchQuery, setSearchQuery] = useState('');
+    const [showFilters, setShowFilters] = useState(true);
+    const [viewMode, setViewMode] = useState('grid');
+    const [activeTab, setActiveTab] = useState('keyword');
+    const [filters, setFilters] = useState({
+        niche: 'All Niches',
+        region: 'All Regions',
+        minMargin: 0,
+        minGrade: 'F',
+        maxSaturation: 100,
+    });
+
+    const searchTabs = [
+        { id: 'keyword', label: 'Keyword' },
+        { id: 'shopify', label: 'Shopify URL' },
+        { id: 'tiktok', label: 'TikTok URL' },
+        { id: 'aliexpress', label: 'AliExpress URL' },
+        { id: 'csv', label: 'CSV Upload' },
+    ];
+
+    const advancedQueries = [
+        { label: 'A-Grade under 3 competitors', query: 'grade:A competitors:<3' },
+        { label: 'High margin, low CPC', query: 'margin:>60 cpc:<30' },
+        { label: 'Rising trend, low saturation', query: 'trend:rising saturation:<40' },
+        { label: 'Electronics under $10', query: 'niche:electronics price:<10' },
+    ];
+
+    const filteredProducts = trendingProducts.filter(p => {
+        if (searchQuery && !p.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+        if (filters.niche !== 'All Niches' && p.category !== filters.niche) return false;
+        if (p.profitMargin < filters.minMargin) return false;
+        if (p.marketSaturation > filters.maxSaturation) return false;
+        return true;
+    });
+
+    return (
+        <div className="finder-page">
+            {/* Search Header */}
+            <div className="finder-header animate-fade-in-up">
+                <h1 className="finder-title">Product Finder</h1>
+                <p className="finder-subtitle">Search, filter, and discover winning products</p>
+            </div>
+
+            {/* Search Tabs */}
+            <div className="finder-search-section animate-fade-in-up delay-1">
+                <div className="tabs">
+                    {searchTabs.map(tab => (
+                        <button
+                            key={tab.id}
+                            className={`tab ${activeTab === tab.id ? 'active' : ''}`}
+                            onClick={() => setActiveTab(tab.id)}
+                        >
+                            {tab.label}
+                        </button>
+                    ))}
+                </div>
+
+                <div className="finder-search-box">
+                    {activeTab === 'csv' ? (
+                        <div className="csv-upload-area">
+                            <Upload size={24} />
+                            <p>Drop your CSV file here or click to browse</p>
+                            <span>Supports: .csv, .xlsx (max 500 products)</span>
+                        </div>
+                    ) : (
+                        <div className="search-container">
+                            {activeTab === 'keyword' ? <Search size={18} className="hero-search-icon" /> : <Link size={18} className="hero-search-icon" />}
+                            <input
+                                type="text"
+                                placeholder={
+                                    activeTab === 'keyword' ? 'Search by keyword, niche, or product name...' :
+                                        activeTab === 'shopify' ? 'Paste Shopify store URL...' :
+                                            activeTab === 'tiktok' ? 'Paste TikTok product URL...' :
+                                                'Paste AliExpress product URL...'
+                                }
+                                className="hero-search-input"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                            />
+                            <button className="hero-search-btn">
+                                <Search size={16} /> Search
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                {/* Advanced Queries */}
+                <div className="advanced-queries">
+                    <span className="aq-label">Quick:</span>
+                    {advancedQueries.map((aq, i) => (
+                        <button key={i} className="aq-btn" onClick={() => setSearchQuery(aq.query)}>
+                            {aq.label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {/* Content Area */}
+            <div className="finder-content animate-fade-in-up delay-2">
+                {/* Filter Toggle & View Mode */}
+                <div className="finder-toolbar">
+                    <button className="btn btn-secondary btn-sm" onClick={() => setShowFilters(!showFilters)}>
+                        <SlidersHorizontal size={14} />
+                        Filters
+                        {showFilters ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </button>
+                    <div className="finder-results-info">
+                        <span>{filteredProducts.length} products found</span>
+                    </div>
+                    <div className="view-toggle">
+                        <button className={`view-btn ${viewMode === 'grid' ? 'active' : ''}`} onClick={() => setViewMode('grid')}><Grid size={16} /></button>
+                        <button className={`view-btn ${viewMode === 'list' ? 'active' : ''}`} onClick={() => setViewMode('list')}><List size={16} /></button>
+                    </div>
+                </div>
+
+                <div className="finder-body">
+                    {/* Filters Panel */}
+                    {showFilters && (
+                        <div className="filters-panel glass-card animate-fade-in">
+                            <h3 className="filters-title"><Filter size={14} /> Filters</h3>
+
+                            <div className="filter-group">
+                                <label className="filter-label">Niche</label>
+                                <select className="select-field" value={filters.niche} onChange={e => setFilters({ ...filters, niche: e.target.value })}>
+                                    {niches.map(n => <option key={n}>{n}</option>)}
+                                </select>
+                            </div>
+
+                            <div className="filter-group">
+                                <label className="filter-label">Region</label>
+                                <select className="select-field" value={filters.region} onChange={e => setFilters({ ...filters, region: e.target.value })}>
+                                    {regions.map(r => <option key={r}>{r}</option>)}
+                                </select>
+                            </div>
+
+                            <div className="filter-group">
+                                <label className="filter-label">Min Profit Margin: {filters.minMargin}%</label>
+                                <input type="range" className="range-slider" min="0" max="100" value={filters.minMargin}
+                                    onChange={e => setFilters({ ...filters, minMargin: Number(e.target.value) })} />
+                            </div>
+
+                            <div className="filter-group">
+                                <label className="filter-label">Max Saturation: {filters.maxSaturation}%</label>
+                                <input type="range" className="range-slider" min="0" max="100" value={filters.maxSaturation}
+                                    onChange={e => setFilters({ ...filters, maxSaturation: Number(e.target.value) })} />
+                            </div>
+
+                            <div className="filter-group">
+                                <label className="filter-label">Min Grade</label>
+                                <select className="select-field" value={filters.minGrade} onChange={e => setFilters({ ...filters, minGrade: e.target.value })}>
+                                    {['A', 'B', 'C', 'D', 'F'].map(g => <option key={g}>{g}</option>)}
+                                </select>
+                            </div>
+
+                            <button className="btn btn-secondary btn-sm" style={{ width: '100%' }}
+                                onClick={() => setFilters({ niche: 'All Niches', region: 'All Regions', minMargin: 0, minGrade: 'F', maxSaturation: 100 })}>
+                                <X size={14} /> Clear All
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Results */}
+                    <div className={`finder-results ${viewMode}`}>
+                        {filteredProducts.map((product) => (
+                            <div key={product.id}
+                                className={`finder-product-card glass-card ${viewMode === 'list' ? 'list-card' : ''}`}
+                                onClick={() => navigate('/dashboard', { state: { product } })}
+                            >
+                                <div className="fpc-header">
+                                    <span className="fpc-emoji">{product.image}</span>
+                                    <div className="fpc-grade" style={{
+                                        background: `${getGradeColor(product.grade)}22`,
+                                        color: getGradeColor(product.grade),
+                                        border: `1px solid ${getGradeColor(product.grade)}44`
+                                    }}>
+                                        {product.grade}
+                                    </div>
+                                </div>
+                                <h4 className="fpc-name">{product.name}</h4>
+                                <div className="fpc-category">{product.category}</div>
+                                <div className="fpc-stats">
+                                    <div className="fpc-stat">
+                                        <span className="fpc-stat-label">Margin</span>
+                                        <span className="fpc-stat-value" style={{ color: '#10b981' }}>{product.profitMargin}%</span>
+                                    </div>
+                                    <div className="fpc-stat">
+                                        <span className="fpc-stat-label">Trend</span>
+                                        <span className="fpc-stat-value" style={{ color: '#8b5cf6' }}>{product.trendVelocity}</span>
+                                    </div>
+                                    <div className="fpc-stat">
+                                        <span className="fpc-stat-label">Sat.</span>
+                                        <span className="fpc-stat-value" style={{ color: product.marketSaturation > 60 ? '#ef4444' : '#06b6d4' }}>{product.marketSaturation}%</span>
+                                    </div>
+                                </div>
+                                <div className="fpc-prices">
+                                    <span className="fpc-cost">${product.price}</span>
+                                    <ArrowRight size={10} />
+                                    <span className="fpc-sell">${product.sellPrice}</span>
+                                </div>
+                                <div className="fpc-footer">
+                                    <span className={`fpc-trend ${product.trend}`}>
+                                        {product.trend === 'rising' ? '↑' : product.trend === 'declining' ? '↓' : '→'} {product.trend}
+                                    </span>
+                                    <span className="fpc-orders">{product.orders.toLocaleString()} orders</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+===
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+    Search, SlidersHorizontal, Upload, Link, Filter,
+    ChevronDown, ChevronUp, ArrowRight, TrendingUp, Star,
+    X, Grid, List, SearchX, Loader2, GitCompareArrows
+} from 'lucide-react';
+import { niches, regions } from '../data/mockData';
+import { getGradeColor } from '../engine/gradingEngine';
+import { analyzeProducts, fetchTrendingProducts } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import './Finder.css';
+
+export default function Finder() {
+    const navigate = useNavigate();
+    const { isAuthenticated } = useAuth();
+    const [searchQuery, setSearchQuery] = useState('');
+    const [showFilters, setShowFilters] = useState(true);
+    const [viewMode, setViewMode] = useState('grid');
+    const [activeTab, setActiveTab] = useState('keyword');
+    const [products, setProducts] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [searched, setSearched] = useState(false);
+    const [compareList, setCompareList] = useState([]);
+    const [filters, setFilters] = useState({
+        niche: 'All Niches',
+        region: 'All Regions',
+        minMargin: 0,
+        minGrade: 'F',
+        maxSaturation: 100,
+    });
+
+    const searchTabs = [
+        { id: 'keyword', label: 'Keyword' },
+        { id: 'shopify', label: 'Shopify URL' },
+        { id: 'tiktok', label: 'TikTok URL' },
+        { id: 'aliexpress', label: 'AliExpress URL' },
+        { id: 'csv', label: 'CSV Upload' },
+    ];
+
+    const advancedQueries = [
+        { label: 'LED lamps', query: 'LED lamp' },
+        { label: 'Phone accessories', query: 'phone case' },
+        { label: 'Home decor', query: 'home decor' },
+        { label: 'Fitness gear', query: 'resistance band' },
+    ];
+
+    // Load trending products on mount
+    useEffect(() => {
+        const loadTrending = async () => {
+            setLoading(true);
+            try {
+                const data = await fetchTrendingProducts();
+                setProducts(data);
+            } catch (err) {
+                console.error('Failed to load trending:', err);
+            } finally {
+                setLoading(false);
+            }
+        };
+        loadTrending();
+    }, []);
+
+    // Search handler
+    const handleSearch = async () => {
+        const query = searchQuery.trim();
+        if (!query) return;
+
+        setLoading(true);
+        setSearched(true);
+        try {
+            const data = await analyzeProducts(query);
+            setProducts(data);
+        } catch (err) {
+            console.error('Search failed:', err);
+            setProducts([]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleKeyDown = (e) => {
+        if (e.key === 'Enter') handleSearch();
+    };
+
+    const handleQuickQuery = async (query) => {
+        setSearchQuery(query);
+        setLoading(true);
+        setSearched(true);
+        try {
+            const data = await analyzeProducts(query);
+            setProducts(data);
+        } catch (err) {
+            console.error('Quick query failed:', err);
+            setProducts([]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const clearSearch = () => {
+        setSearchQuery('');
+        setSearched(false);
+        setFilters({ niche: 'All Niches', region: 'All Regions', minMargin: 0, minGrade: 'F', maxSaturation: 100 });
+        // Reload trending
+        const loadTrending = async () => {
+            setLoading(true);
+            try {
+                const data = await fetchTrendingProducts();
+                setProducts(data);
+            } catch (err) {
+                console.error('Failed to load trending:', err);
+            } finally {
+                setLoading(false);
+            }
+        };
+        loadTrending();
+    };
+
+    // Client-side post-filters on API results
+    const filteredProducts = products.filter(p => {
+        if (filters.niche !== 'All Niches' && p.category !== filters.niche) return false;
+        if (p.profitMargin < filters.minMargin) return false;
+        if (p.marketSaturation > filters.maxSaturation) return false;
+        return true;
+    });
+
+    // Compare logic
+    const toggleCompare = (product, e) => {
+        e.stopPropagation();
+        setCompareList(prev => {
+            const exists = prev.find(p => p.id === product.id);
+            if (exists) return prev.filter(p => p.id !== product.id);
+            if (prev.length >= 3) return prev; // max 3
+            return [...prev, product];
+        });
+    };
+
+    const isInCompare = (id) => compareList.some(p => p.id === id);
+
+    const goToCompare = () => {
+        if (compareList.length >= 2) {
+            navigate('/compare', { state: { products: compareList } });
+        }
+    };
+
+    return (
+        <div className="finder-page">
+            {/* Search Header */}
+            <div className="finder-header animate-fade-in-up">
+                <h1 className="finder-title">Product Finder</h1>
+                <p className="finder-subtitle">
+                    {searched
+                        ? `Showing results for "${searchQuery}"`
+                        : 'Search any keyword to discover winning products'
+                    }
+                </p>
+            </div>
+
+            {/* Search Tabs */}
+            <div className="finder-search-section animate-fade-in-up delay-1">
+                <div className="tabs">
+                    {searchTabs.map(tab => (
+                        <button
+                            key={tab.id}
+                            className={`tab ${activeTab === tab.id ? 'active' : ''}`}
+                            onClick={() => setActiveTab(tab.id)}
+                        >
+                            {tab.label}
+                        </button>
+                    ))}
+                </div>
+
+                <div className="finder-search-box">
+                    {activeTab === 'csv' ? (
+                        <div className="csv-upload-area">
+                            <Upload size={24} />
+                            <p>Drop your CSV file here or click to browse</p>
+                            <span>Supports: .csv, .xlsx (max 500 products)</span>
+                        </div>
+                    ) : (
+                        <div className="search-container">
+                            {activeTab === 'keyword' ? <Search size={18} className="hero-search-icon" /> : <Link size={18} className="hero-search-icon" />}
+                            <input
+                                type="text"
+                                placeholder={
+                                    activeTab === 'keyword' ? 'Search any product keyword (e.g., slippers, LED lamp, phone case)...' :
+                                        activeTab === 'shopify' ? 'Paste Shopify store URL...' :
+                                            activeTab === 'tiktok' ? 'Paste TikTok product URL...' :
+                                                'Paste AliExpress product URL...'
+                                }
+                                className="hero-search-input"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                onKeyDown={handleKeyDown}
+                            />
+                            <button className="hero-search-btn" onClick={handleSearch} disabled={loading}>
+                                {loading ? <Loader2 size={16} className="spin-icon" /> : <Search size={16} />}
+                                {loading ? 'Analyzing...' : 'Analyze'}
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                {/* Quick Queries */}
+                <div className="advanced-queries">
+                    <span className="aq-label">Try:</span>
+                    {advancedQueries.map((aq, i) => (
+                        <button key={i} className="aq-btn" onClick={() => handleQuickQuery(aq.query)}>
+                            {aq.label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {/* Content Area */}
+            <div className="finder-content animate-fade-in-up delay-2">
+                {/* Filter Toggle & View Mode */}
+                <div className="finder-toolbar">
+                    <button className="btn btn-secondary btn-sm" onClick={() => setShowFilters(!showFilters)}>
+                        <SlidersHorizontal size={14} />
+                        Filters
+                        {showFilters ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </button>
+                    <div className="finder-results-info">
+                        <span>
+                            {loading ? 'Analyzing products...' : `${filteredProducts.length} products found`}
+                        </span>
+                    </div>
+                    <div className="view-toggle">
+                        <button className={`view-btn ${viewMode === 'grid' ? 'active' : ''}`} onClick={() => setViewMode('grid')}><Grid size={16} /></button>
+                        <button className={`view-btn ${viewMode === 'list' ? 'active' : ''}`} onClick={() => setViewMode('list')}><List size={16} /></button>
+                    </div>
+                </div>
+
+                <div className="finder-body">
+                    {/* Filters Panel */}
+                    {showFilters && (
+                        <div className="filters-panel glass-card animate-fade-in">
+                            <h3 className="filters-title"><Filter size={14} /> Filters</h3>
+
+                            <div className="filter-group">
+                                <label className="filter-label">Niche</label>
+                                <select className="select-field" value={filters.niche} onChange={e => setFilters({ ...filters, niche: e.target.value })}>
+                                    {niches.map(n => <option key={n}>{n}</option>)}
+                                </select>
+                            </div>
+
+                            <div className="filter-group">
+                                <label className="filter-label">Region</label>
+                                <select className="select-field" value={filters.region} onChange={e => setFilters({ ...filters, region: e.target.value })}>
+                                    {regions.map(r => <option key={r}>{r}</option>)}
+                                </select>
+                            </div>
+
+                            <div className="filter-group">
+                                <label className="filter-label">Min Profit Margin: {filters.minMargin}%</label>
+                                <input type="range" className="range-slider" min="0" max="100" value={filters.minMargin}
+                                    onChange={e => setFilters({ ...filters, minMargin: Number(e.target.value) })} />
+                            </div>
+
+                            <div className="filter-group">
+                                <label className="filter-label">Max Saturation: {filters.maxSaturation}%</label>
+                                <input type="range" className="range-slider" min="0" max="100" value={filters.maxSaturation}
+                                    onChange={e => setFilters({ ...filters, maxSaturation: Number(e.target.value) })} />
+                            </div>
+
+                            <div className="filter-group">
+                                <label className="filter-label">Min Grade</label>
+                                <select className="select-field" value={filters.minGrade} onChange={e => setFilters({ ...filters, minGrade: e.target.value })}>
+                                    {['A', 'B', 'C', 'D', 'F'].map(g => <option key={g}>{g}</option>)}
+                                </select>
+                            </div>
+
+                            <button className="btn btn-secondary btn-sm" style={{ width: '100%' }}
+                                onClick={() => setFilters({ niche: 'All Niches', region: 'All Regions', minMargin: 0, minGrade: 'F', maxSaturation: 100 })}>
+                                <X size={14} /> Clear All
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Results */}
+                    {loading ? (
+                        <div className="finder-empty-state">
+                            <Loader2 size={48} className="finder-empty-icon spin-icon" />
+                            <h3>Analyzing products...</h3>
+                            <p>Our AI engine is generating product insights</p>
+                        </div>
+                    ) : filteredProducts.length === 0 ? (
+                        <div className="finder-empty-state">
+                            <SearchX size={48} className="finder-empty-icon" />
+                            <h3>No products match your search</h3>
+                            <p>Try broader keywords or adjust your filters</p>
+                            <button className="btn btn-primary btn-sm" onClick={clearSearch}>
+                                <X size={14} /> Clear All Filters
+                            </button>
+                        </div>
+                    ) : (
+                        <div className={`finder-results ${viewMode}`}>
+                            {filteredProducts.map((product) => (
+                                <div key={product.id}
+                                    className={`finder-product-card glass-card ${viewMode === 'list' ? 'list-card' : ''} ${isInCompare(product.id) ? 'compare-selected' : ''}`}
+                                    onClick={() => navigate('/dashboard', { state: { product } })}
+                                >
+                                    {/* Compare checkbox */}
+                                    <button
+                                        className={`compare-btn ${isInCompare(product.id) ? 'active' : ''}`}
+                                        onClick={(e) => toggleCompare(product, e)}
+                                        title={isInCompare(product.id) ? 'Remove from compare' : 'Add to compare'}
+                                    >
+                                        <GitCompareArrows size={14} />
+                                    </button>
+                                    <div className="fpc-header">
+                                        <span className="fpc-emoji">{product.image}</span>
+                                        <div className="fpc-grade" style={{
+                                            background: `${getGradeColor(product.grade)}22`,
+                                            color: getGradeColor(product.grade),
+                                            border: `1px solid ${getGradeColor(product.grade)}44`
+                                        }}>
+                                            {product.grade}
+                                        </div>
+                                    </div>
+                                    <h4 className="fpc-name">{product.name}</h4>
+                                    <div className="fpc-category">{product.category}</div>
+                                    <div className="fpc-stats">
+                                        <div className="fpc-stat">
+                                            <span className="fpc-stat-label">Margin</span>
+                                            <span className="fpc-stat-value" style={{ color: '#10b981' }}>{product.profitMargin}%</span>
+                                        </div>
+                                        <div className="fpc-stat">
+                                            <span className="fpc-stat-label">Trend</span>
+                                            <span className="fpc-stat-value" style={{ color: '#8b5cf6' }}>{product.trendVelocity}</span>
+                                        </div>
+                                        <div className="fpc-stat">
+                                            <span className="fpc-stat-label">Sat.</span>
+                                            <span className="fpc-stat-value" style={{ color: product.marketSaturation > 60 ? '#ef4444' : '#06b6d4' }}>{product.marketSaturation}%</span>
+                                        </div>
+                                    </div>
+                                    <div className="fpc-prices">
+                                        <span className="fpc-cost">${product.price}</span>
+                                        <ArrowRight size={10} />
+                                        <span className="fpc-sell">${product.sellPrice}</span>
+                                    </div>
+                                    <div className="fpc-footer">
+                                        <span className={`fpc-trend ${product.trend}`}>
+                                            {product.trend === 'rising' ? '↑' : product.trend === 'declining' ? '↓' : '→'} {product.trend}
+                                        </span>
+                                        <span className="fpc-orders">{product.orders.toLocaleString()} orders</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Compare Floating Bar */}
+            {compareList.length >= 2 && (
+                <div className="compare-floating-bar animate-fade-in-up">
+                    <div className="compare-bar-info">
+                        <GitCompareArrows size={18} />
+                        <span>{compareList.length} products selected</span>
+                    </div>
+                    <div className="compare-bar-actions">
+                        <button className="btn btn-secondary btn-sm" onClick={() => setCompareList([])}>
+                            Clear
+                        </button>
+                        <button className="btn btn-primary btn-sm" onClick={goToCompare}>
+                            Compare Now →
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+```
+```diff:Finder.css
+/* Finder Page Styles */
+
+.finder-page {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    position: relative;
+    z-index: 1;
+}
+
+.finder-header {
+    margin-bottom: 4px;
+}
+
+.finder-title {
+    font-size: 1.5rem;
+    font-weight: 800;
+}
+
+.finder-subtitle {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+/* Search */
+.finder-search-section {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.finder-search-box {
+    margin-top: 8px;
+}
+
+.csv-upload-area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 40px;
+    border: 2px dashed var(--border-primary);
+    border-radius: var(--radius-lg);
+    color: var(--text-tertiary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.csv-upload-area:hover {
+    border-color: var(--accent-primary);
+    color: var(--text-secondary);
+}
+
+.csv-upload-area p {
+    font-size: 0.9rem;
+}
+
+.csv-upload-area span {
+    font-size: 0.75rem;
+}
+
+.advanced-queries {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.aq-label {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    font-weight: 600;
+}
+
+.aq-btn {
+    font-size: 0.78rem;
+    padding: 5px 12px;
+    background: var(--bg-glass);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-full);
+    color: var(--text-secondary);
+    transition: all var(--transition-fast);
+}
+
+.aq-btn:hover {
+    color: var(--accent-primary);
+    border-color: var(--accent-primary);
+    background: rgba(139, 92, 246, 0.08);
+}
+
+/* Toolbar */
+.finder-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.finder-results-info {
+    flex: 1;
+    font-size: 0.82rem;
+    color: var(--text-tertiary);
+}
+
+.view-toggle {
+    display: flex;
+    gap: 4px;
+    padding: 3px;
+    background: var(--bg-glass);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-primary);
+}
+
+.view-btn {
+    padding: 6px 8px;
+    border-radius: 4px;
+    color: var(--text-tertiary);
+    transition: all var(--transition-fast);
+}
+
+.view-btn.active {
+    background: var(--accent-primary);
+    color: white;
+}
+
+/* Body */
+.finder-body {
+    display: flex;
+    gap: 20px;
+}
+
+/* Filters */
+.filters-panel {
+    width: 240px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    height: fit-content;
+    position: sticky;
+    top: calc(var(--topbar-height) + 24px);
+}
+
+.filters-title {
+    font-size: 0.9rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-primary);
+}
+
+.filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.filter-label {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+/* Results Grid */
+.finder-results {
+    flex: 1;
+    display: grid;
+    gap: 14px;
+}
+
+.finder-results.grid {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+
+.finder-results.list {
+    grid-template-columns: 1fr;
+}
+
+.finder-product-card {
+    cursor: pointer;
+    transition: all var(--transition-base);
+}
+
+.finder-product-card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-lg), var(--shadow-glow);
+}
+
+.list-card {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.list-card .fpc-header {
+    margin-bottom: 0;
+}
+
+.list-card .fpc-name {
+    flex: 1;
+    margin-bottom: 0;
+}
+
+.list-card .fpc-category {
+    display: none;
+}
+
+.list-card .fpc-stats {
+    flex-direction: row;
+    gap: 20px;
+}
+
+.list-card .fpc-footer {
+    border-top: none;
+    padding-top: 0;
+}
+
+.fpc-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10px;
+}
+
+.fpc-emoji {
+    font-size: 1.8rem;
+}
+
+.fpc-grade {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    font-weight: 800;
+}
+
+.fpc-name {
+    font-size: 0.9rem;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.fpc-category {
+    font-size: 0.72rem;
+    color: var(--text-tertiary);
+    margin-bottom: 12px;
+}
+
+.fpc-stats {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.fpc-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.fpc-stat-label {
+    font-size: 0.65rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+}
+
+.fpc-stat-value {
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.fpc-prices {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+
+.fpc-cost {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    text-decoration: line-through;
+}
+
+.fpc-sell {
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: var(--accent-success);
+}
+
+.fpc-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-primary);
+}
+
+.fpc-trend {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: capitalize;
+}
+
+.fpc-trend.rising {
+    color: var(--accent-success);
+}
+
+.fpc-trend.declining {
+    color: var(--accent-danger);
+}
+
+.fpc-trend.stable {
+    color: var(--accent-warning);
+}
+
+.fpc-orders {
+    font-size: 0.72rem;
+    color: var(--text-tertiary);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .filters-panel {
+        width: 100%;
+        position: static;
+    }
+
+    .finder-body {
+        flex-direction: column;
+    }
+
+    .finder-results.grid {
+        grid-template-columns: 1fr;
+    }
+}
+===
+/* Finder Page Styles */
+
+.finder-page {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    position: relative;
+    z-index: 1;
+}
+
+.finder-header {
+    margin-bottom: 4px;
+}
+
+.finder-title {
+    font-size: 1.5rem;
+    font-weight: 800;
+}
+
+.finder-subtitle {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+/* Search */
+.finder-search-section {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.finder-search-box {
+    margin-top: 8px;
+}
+
+.csv-upload-area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 40px;
+    border: 2px dashed var(--border-primary);
+    border-radius: var(--radius-lg);
+    color: var(--text-tertiary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.csv-upload-area:hover {
+    border-color: var(--accent-primary);
+    color: var(--text-secondary);
+}
+
+.csv-upload-area p {
+    font-size: 0.9rem;
+}
+
+.csv-upload-area span {
+    font-size: 0.75rem;
+}
+
+.advanced-queries {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.aq-label {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    font-weight: 600;
+}
+
+.aq-btn {
+    font-size: 0.78rem;
+    padding: 5px 12px;
+    background: var(--bg-glass);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-full);
+    color: var(--text-secondary);
+    transition: all var(--transition-fast);
+}
+
+.aq-btn:hover {
+    color: var(--accent-primary);
+    border-color: var(--accent-primary);
+    background: rgba(139, 92, 246, 0.08);
+}
+
+/* Toolbar */
+.finder-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.finder-results-info {
+    flex: 1;
+    font-size: 0.82rem;
+    color: var(--text-tertiary);
+}
+
+.view-toggle {
+    display: flex;
+    gap: 4px;
+    padding: 3px;
+    background: var(--bg-glass);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-primary);
+}
+
+.view-btn {
+    padding: 6px 8px;
+    border-radius: 4px;
+    color: var(--text-tertiary);
+    transition: all var(--transition-fast);
+}
+
+.view-btn.active {
+    background: var(--accent-primary);
+    color: white;
+}
+
+/* Body */
+.finder-body {
+    display: flex;
+    gap: 20px;
+}
+
+/* Filters */
+.filters-panel {
+    width: 240px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    height: fit-content;
+    position: sticky;
+    top: calc(var(--topbar-height) + 24px);
+}
+
+.filters-title {
+    font-size: 0.9rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-primary);
+}
+
+.filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.filter-label {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+/* Results Grid */
+.finder-results {
+    flex: 1;
+    display: grid;
+    gap: 14px;
+}
+
+.finder-results.grid {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+
+.finder-results.list {
+    grid-template-columns: 1fr;
+}
+
+.finder-product-card {
+    cursor: pointer;
+    transition: all var(--transition-base);
+}
+
+.finder-product-card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-lg), var(--shadow-glow);
+}
+
+.list-card {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.list-card .fpc-header {
+    margin-bottom: 0;
+}
+
+.list-card .fpc-name {
+    flex: 1;
+    margin-bottom: 0;
+}
+
+.list-card .fpc-category {
+    display: none;
+}
+
+.list-card .fpc-stats {
+    flex-direction: row;
+    gap: 20px;
+}
+
+.list-card .fpc-footer {
+    border-top: none;
+    padding-top: 0;
+}
+
+.fpc-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10px;
+}
+
+.fpc-emoji {
+    font-size: 1.8rem;
+}
+
+.fpc-grade {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    font-weight: 800;
+}
+
+.fpc-name {
+    font-size: 0.9rem;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.fpc-category {
+    font-size: 0.72rem;
+    color: var(--text-tertiary);
+    margin-bottom: 12px;
+}
+
+.fpc-stats {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.fpc-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.fpc-stat-label {
+    font-size: 0.65rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+}
+
+.fpc-stat-value {
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.fpc-prices {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+
+.fpc-cost {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    text-decoration: line-through;
+}
+
+.fpc-sell {
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: var(--accent-success);
+}
+
+.fpc-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-primary);
+}
+
+.fpc-trend {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: capitalize;
+}
+
+.fpc-trend.rising {
+    color: var(--accent-success);
+}
+
+.fpc-trend.declining {
+    color: var(--accent-danger);
+}
+
+.fpc-trend.stable {
+    color: var(--accent-warning);
+}
+
+.fpc-orders {
+    font-size: 0.72rem;
+    color: var(--text-tertiary);
+}
+
+/* Empty State */
+.finder-empty-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 80px 20px;
+    text-align: center;
+    min-height: 300px;
+}
+
+.finder-empty-icon {
+    color: var(--text-tertiary);
+    opacity: 0.5;
+    margin-bottom: 8px;
+}
+
+.finder-empty-state h3 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+}
+
+.finder-empty-state p {
+    font-size: 0.85rem;
+    color: var(--text-tertiary);
+    margin-bottom: 8px;
+}
+
+/* Compare Button */
+.finder-product-card {
+    position: relative;
+}
+
+.compare-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-glass);
+    border: 1px solid var(--border-primary);
+    color: var(--text-tertiary);
+    transition: all var(--transition-fast);
+    z-index: 2;
+    opacity: 0;
+}
+
+.finder-product-card:hover .compare-btn {
+    opacity: 1;
+}
+
+.compare-btn:hover {
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+    background: rgba(139, 92, 246, 0.1);
+}
+
+.compare-btn.active {
+    opacity: 1;
+    background: var(--accent-primary);
+    color: white;
+    border-color: var(--accent-primary);
+}
+
+.compare-selected {
+    border-color: var(--accent-primary) !important;
+    box-shadow: 0 0 20px rgba(139, 92, 246, 0.2) !important;
+}
+
+/* Floating Compare Bar */
+.compare-floating-bar {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 14px 24px;
+    background: rgba(17, 24, 39, 0.95);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--border-hover);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg), var(--shadow-glow);
+    z-index: 1000;
+}
+
+.compare-bar-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--accent-primary);
+}
+
+.compare-bar-actions {
+    display: flex;
+    gap: 8px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .filters-panel {
+        width: 100%;
+        position: static;
+    }
+
+    .finder-body {
+        flex-direction: column;
+    }
+
+    .finder-results.grid {
+        grid-template-columns: 1fr;
+    }
+}
+```
+```diff:Home.jsx
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+    Search, ArrowRight, TrendingUp, Zap, BarChart3,
+    Star, Clock, ShieldCheck, Target, Flame, ChevronRight,
+    Globe, DollarSign, Sparkles
+} from 'lucide-react';
+import { trendingProducts, dailyAGrade, marketSnapshot } from '../data/mockData';
+import { getGradeColor } from '../engine/gradingEngine';
+import './Home.css';
+
+export default function Home() {
+    const [searchUrl, setSearchUrl] = useState('');
+    const navigate = useNavigate();
+
+    const goToProduct = (product) => {
+        navigate('/dashboard', { state: { product } });
+    };
+
+    const handleAnalyze = () => {
+        if (searchUrl.trim()) {
+            const match = trendingProducts.find(p =>
+                p.name.toLowerCase().includes(searchUrl.trim().toLowerCase())
+            );
+            goToProduct(match || trendingProducts[0]);
+        }
+    };
+
+    return (
+        <div className="home-page">
+            {/* Hero Section */}
+            <section className="hero-section animate-fade-in-up">
+                <div className="hero-glow" />
+                <div className="hero-content">
+                    <div className="hero-badge">
+                        <Sparkles size={14} />
+                        AI-Powered Product Intelligence
+                    </div>
+                    <h1 className="hero-title">
+                        Find <span className="gradient-text">Winning Products</span> Before
+                        <br />Everyone Else
+                    </h1>
+                    <p className="hero-subtitle">
+                        Analyze any product in seconds. Get AI-powered grades, profit predictions,
+                        and risk assessments to make data-driven decisions.
+                    </p>
+
+                    {/* Search Bar */}
+                    <div className="hero-search">
+                        <div className="search-container">
+                            <Search size={20} className="hero-search-icon" />
+                            <input
+                                type="text"
+                                placeholder="Paste product URL or enter keywords..."
+                                value={searchUrl}
+                                onChange={(e) => setSearchUrl(e.target.value)}
+                                className="hero-search-input"
+                                onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
+                            />
+                            <button className="hero-search-btn" onClick={handleAnalyze}>
+                                <Zap size={16} />
+                                Analyze
+                            </button>
+                        </div>
+                        <div className="search-hints">
+                            <span>Try:</span>
+                            <button onClick={() => { setSearchUrl('LED Sunset Lamp'); goToProduct(trendingProducts[0]); }}>LED Sunset Lamp</button>
+                            <button onClick={() => { setSearchUrl('Portable Neck Fan'); goToProduct(trendingProducts[1]); }}>Portable Neck Fan</button>
+                            <button onClick={() => { setSearchUrl('Star Projector'); goToProduct(trendingProducts[5]); }}>Star Projector</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            {/* Stats Bar */}
+            <section className="stats-bar animate-fade-in-up delay-1">
+                <div className="stat-item">
+                    <div className="stat-icon"><Globe size={18} /></div>
+                    <div className="stat-info">
+                        <span className="stat-value">{marketSnapshot.risingProducts}</span>
+                        <span className="stat-label">Rising Products</span>
+                    </div>
+                </div>
+                <div className="stat-item">
+                    <div className="stat-icon"><DollarSign size={18} /></div>
+                    <div className="stat-info">
+                        <span className="stat-value">{marketSnapshot.avgCPC}</span>
+                        <span className="stat-label">Avg CPC</span>
+                    </div>
+                </div>
+                <div className="stat-item">
+                    <div className="stat-icon"><Flame size={18} /></div>
+                    <div className="stat-info">
+                        <span className="stat-value">{marketSnapshot.topNiche}</span>
+                        <span className="stat-label">Top Niche</span>
+                    </div>
+                </div>
+                <div className="stat-item">
+                    <div className="stat-icon"><Target size={18} /></div>
+                    <div className="stat-info">
+                        <span className="stat-value">{marketSnapshot.demandIndex}%</span>
+                        <span className="stat-label">Demand Index</span>
+                    </div>
+                </div>
+            </section>
+
+            {/* Daily A-Grade Product */}
+            <section className="daily-grade-section animate-fade-in-up delay-2">
+                <div className="section-header">
+                    <div>
+                        <h2 className="section-title">🏆 Daily A-Grade Product</h2>
+                        <p className="section-subtitle">Top-rated product discovered today by our AI engine</p>
+                    </div>
+                    <button className="btn btn-secondary btn-sm" onClick={() => goToProduct(dailyAGrade)}>
+                        View Analysis <ChevronRight size={14} />
+                    </button>
+                </div>
+
+                <div className="daily-card glass-card" onClick={() => goToProduct(dailyAGrade)}>
+                    <div className="daily-emoji">{dailyAGrade.image}</div>
+                    <div className="daily-info">
+                        <h3 className="daily-name">{dailyAGrade.name}</h3>
+                        <div className="daily-meta">
+                            <span className="badge badge-success">Grade {dailyAGrade.grade}</span>
+                            <span className="badge badge-info">{dailyAGrade.category}</span>
+                            <span className="badge badge-purple">Score: {dailyAGrade.score}</span>
+                        </div>
+                        <div className="daily-metrics">
+                            <div className="daily-metric">
+                                <span className="dm-label">Profit Margin</span>
+                                <span className="dm-value" style={{ color: '#10b981' }}>{dailyAGrade.profitMargin}%</span>
+                            </div>
+                            <div className="daily-metric">
+                                <span className="dm-label">Trend Velocity</span>
+                                <span className="dm-value" style={{ color: '#06b6d4' }}>{dailyAGrade.trendVelocity}/100</span>
+                            </div>
+                            <div className="daily-metric">
+                                <span className="dm-label">Competition</span>
+                                <span className="dm-value" style={{ color: '#10b981' }}>Low</span>
+                            </div>
+                            <div className="daily-metric">
+                                <span className="dm-label">Est. ROI</span>
+                                <span className="dm-value" style={{ color: '#f59e0b' }}>269%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="daily-grade-display">
+                        <div className="daily-grade-circle" style={{ borderColor: getGradeColor(dailyAGrade.grade) }}>
+                            <span className="daily-grade-letter" style={{ color: getGradeColor(dailyAGrade.grade) }}>
+                                {dailyAGrade.grade}
+                            </span>
+                            <span className="daily-grade-score">{dailyAGrade.score}/100</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            {/* Trending Products */}
+            <section className="trending-section animate-fade-in-up delay-3">
+                <div className="section-header">
+                    <div>
+                        <h2 className="section-title">🔥 Trending Products</h2>
+                        <p className="section-subtitle">Products gaining momentum right now</p>
+                    </div>
+                    <button className="btn btn-secondary btn-sm" onClick={() => navigate('/finder')}>
+                        View All <ChevronRight size={14} />
+                    </button>
+                </div>
+
+                <div className="trending-grid">
+                    {trendingProducts.slice(0, 6).map((product) => (
+                        <div key={product.id} className="product-card glass-card" onClick={() => goToProduct(product)}>
+                            <div className="pc-header">
+                                <div className="pc-emoji">{product.image}</div>
+                                <div className="pc-grade-badge" style={{
+                                    background: `${getGradeColor(product.grade)}22`,
+                                    color: getGradeColor(product.grade),
+                                    border: `1px solid ${getGradeColor(product.grade)}44`
+                                }}>
+                                    {product.grade}
+                                </div>
+                            </div>
+                            <h4 className="pc-name">{product.name}</h4>
+                            <div className="pc-category">{product.category}</div>
+                            <div className="pc-prices">
+                                <span className="pc-cost">${product.price}</span>
+                                <ArrowRight size={12} />
+                                <span className="pc-sell">${product.sellPrice}</span>
+                            </div>
+                            <div className="pc-footer">
+                                <div className="pc-metric">
+                                    <TrendingUp size={12} />
+                                    <span>{product.profitMargin}% margin</span>
+                                </div>
+                                <div className={`pc-trend ${product.trend}`}>
+                                    {product.trend === 'rising' ? '↑' : product.trend === 'declining' ? '↓' : '→'}
+                                    {product.trend}
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </section>
+
+            {/* Recently Scanned */}
+            <section className="recent-section animate-fade-in-up delay-4">
+                <div className="section-header">
+                    <h2 className="section-title">🕐 Recently Scanned</h2>
+                </div>
+                <div className="recent-list">
+                    {trendingProducts.slice(0, 4).map((product) => (
+                        <div key={product.id} className="recent-item glass-card glass-card-sm" onClick={() => goToProduct(product)}>
+                            <span className="recent-emoji">{product.image}</span>
+                            <div className="recent-info">
+                                <span className="recent-name">{product.name}</span>
+                                <span className="recent-time">2 hours ago</span>
+                            </div>
+                            <div className="recent-grade" style={{ color: getGradeColor(product.grade) }}>
+                                {product.grade}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </section>
+        </div>
+    );
+}
+===
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+    Search, ArrowRight, TrendingUp, Zap, BarChart3,
+    Star, Clock, ShieldCheck, Target, Flame, ChevronRight,
+    Globe, DollarSign, Sparkles, Loader2
+} from 'lucide-react';
+import { dailyAGrade, marketSnapshot } from '../data/mockData';
+import { getGradeColor } from '../engine/gradingEngine';
+import { fetchTrendingProducts } from '../services/api';
+import './Home.css';
+
+export default function Home() {
+    const [searchUrl, setSearchUrl] = useState('');
+    const [trendingProducts, setTrendingProducts] = useState([]);
+    const [loadingTrending, setLoadingTrending] = useState(true);
+    const navigate = useNavigate();
+
+    useEffect(() => {
+        const load = async () => {
+            try {
+                const data = await fetchTrendingProducts();
+                setTrendingProducts(data);
+            } catch (err) {
+                console.error('Failed to load trending:', err);
+            } finally {
+                setLoadingTrending(false);
+            }
+        };
+        load();
+    }, []);
+
+    const goToProduct = (product) => {
+        navigate('/dashboard', { state: { product } });
+    };
+
+    const handleAnalyze = () => {
+        if (searchUrl.trim()) {
+            navigate('/finder');
+        }
+    };
+
+    return (
+        <div className="home-page">
+            {/* Hero Section */}
+            <section className="hero-section animate-fade-in-up">
+                <div className="hero-glow" />
+                <div className="hero-content">
+                    <div className="hero-badge">
+                        <Sparkles size={14} />
+                        AI-Powered Product Intelligence
+                    </div>
+                    <h1 className="hero-title">
+                        Find <span className="gradient-text">Winning Products</span> Before
+                        <br />Everyone Else
+                    </h1>
+                    <p className="hero-subtitle">
+                        Analyze any product in seconds. Get AI-powered grades, profit predictions,
+                        and risk assessments to make data-driven decisions.
+                    </p>
+
+                    {/* Search Bar */}
+                    <div className="hero-search">
+                        <div className="search-container">
+                            <Search size={20} className="hero-search-icon" />
+                            <input
+                                type="text"
+                                placeholder="Paste product URL or enter keywords..."
+                                value={searchUrl}
+                                onChange={(e) => setSearchUrl(e.target.value)}
+                                className="hero-search-input"
+                                onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
+                            />
+                            <button className="hero-search-btn" onClick={handleAnalyze}>
+                                <Zap size={16} />
+                                Analyze
+                            </button>
+                        </div>
+                        <div className="search-hints">
+                            <span>Try:</span>
+                            <button onClick={() => navigate('/finder')}>LED Sunset Lamp</button>
+                            <button onClick={() => navigate('/finder')}>Portable Neck Fan</button>
+                            <button onClick={() => navigate('/finder')}>Star Projector</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            {/* Stats Bar */}
+            <section className="stats-bar animate-fade-in-up delay-1">
+                <div className="stat-item">
+                    <div className="stat-icon"><Globe size={18} /></div>
+                    <div className="stat-info">
+                        <span className="stat-value">{marketSnapshot.risingProducts}</span>
+                        <span className="stat-label">Rising Products</span>
+                    </div>
+                </div>
+                <div className="stat-item">
+                    <div className="stat-icon"><DollarSign size={18} /></div>
+                    <div className="stat-info">
+                        <span className="stat-value">{marketSnapshot.avgCPC}</span>
+                        <span className="stat-label">Avg CPC</span>
+                    </div>
+                </div>
+                <div className="stat-item">
+                    <div className="stat-icon"><Flame size={18} /></div>
+                    <div className="stat-info">
+                        <span className="stat-value">{marketSnapshot.topNiche}</span>
+                        <span className="stat-label">Top Niche</span>
+                    </div>
+                </div>
+                <div className="stat-item">
+                    <div className="stat-icon"><Target size={18} /></div>
+                    <div className="stat-info">
+                        <span className="stat-value">{marketSnapshot.demandIndex}%</span>
+                        <span className="stat-label">Demand Index</span>
+                    </div>
+                </div>
+            </section>
+
+            {/* Daily A-Grade Product */}
+            <section className="daily-grade-section animate-fade-in-up delay-2">
+                <div className="section-header">
+                    <div>
+                        <h2 className="section-title">🏆 Daily A-Grade Product</h2>
+                        <p className="section-subtitle">Top-rated product discovered today by our AI engine</p>
+                    </div>
+                    <button className="btn btn-secondary btn-sm" onClick={() => goToProduct(dailyAGrade)}>
+                        View Analysis <ChevronRight size={14} />
+                    </button>
+                </div>
+
+                <div className="daily-card glass-card" onClick={() => goToProduct(dailyAGrade)}>
+                    <div className="daily-emoji">{dailyAGrade.image}</div>
+                    <div className="daily-info">
+                        <h3 className="daily-name">{dailyAGrade.name}</h3>
+                        <div className="daily-meta">
+                            <span className="badge badge-success">Grade {dailyAGrade.grade}</span>
+                            <span className="badge badge-info">{dailyAGrade.category}</span>
+                            <span className="badge badge-purple">Score: {dailyAGrade.score}</span>
+                        </div>
+                        <div className="daily-metrics">
+                            <div className="daily-metric">
+                                <span className="dm-label">Profit Margin</span>
+                                <span className="dm-value" style={{ color: '#10b981' }}>{dailyAGrade.profitMargin}%</span>
+                            </div>
+                            <div className="daily-metric">
+                                <span className="dm-label">Trend Velocity</span>
+                                <span className="dm-value" style={{ color: '#06b6d4' }}>{dailyAGrade.trendVelocity}/100</span>
+                            </div>
+                            <div className="daily-metric">
+                                <span className="dm-label">Competition</span>
+                                <span className="dm-value" style={{ color: '#10b981' }}>Low</span>
+                            </div>
+                            <div className="daily-metric">
+                                <span className="dm-label">Est. ROI</span>
+                                <span className="dm-value" style={{ color: '#f59e0b' }}>269%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="daily-grade-display">
+                        <div className="daily-grade-circle" style={{ borderColor: getGradeColor(dailyAGrade.grade) }}>
+                            <span className="daily-grade-letter" style={{ color: getGradeColor(dailyAGrade.grade) }}>
+                                {dailyAGrade.grade}
+                            </span>
+                            <span className="daily-grade-score">{dailyAGrade.score}/100</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            {/* Trending Products */}
+            <section className="trending-section animate-fade-in-up delay-3">
+                <div className="section-header">
+                    <div>
+                        <h2 className="section-title">🔥 Trending Products</h2>
+                        <p className="section-subtitle">Products gaining momentum right now</p>
+                    </div>
+                    <button className="btn btn-secondary btn-sm" onClick={() => navigate('/finder')}>
+                        View All <ChevronRight size={14} />
+                    </button>
+                </div>
+
+                <div className="trending-grid">
+                    {trendingProducts.slice(0, 6).map((product) => (
+                        <div key={product.id} className="product-card glass-card" onClick={() => goToProduct(product)}>
+                            <div className="pc-header">
+                                <div className="pc-emoji">{product.image}</div>
+                                <div className="pc-grade-badge" style={{
+                                    background: `${getGradeColor(product.grade)}22`,
+                                    color: getGradeColor(product.grade),
+                                    border: `1px solid ${getGradeColor(product.grade)}44`
+                                }}>
+                                    {product.grade}
+                                </div>
+                            </div>
+                            <h4 className="pc-name">{product.name}</h4>
+                            <div className="pc-category">{product.category}</div>
+                            <div className="pc-prices">
+                                <span className="pc-cost">${product.price}</span>
+                                <ArrowRight size={12} />
+                                <span className="pc-sell">${product.sellPrice}</span>
+                            </div>
+                            <div className="pc-footer">
+                                <div className="pc-metric">
+                                    <TrendingUp size={12} />
+                                    <span>{product.profitMargin}% margin</span>
+                                </div>
+                                <div className={`pc-trend ${product.trend}`}>
+                                    {product.trend === 'rising' ? '↑' : product.trend === 'declining' ? '↓' : '→'}
+                                    {product.trend}
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </section>
+
+            {/* Recently Scanned */}
+            <section className="recent-section animate-fade-in-up delay-4">
+                <div className="section-header">
+                    <h2 className="section-title">🕐 Recently Scanned</h2>
+                </div>
+                <div className="recent-list">
+                    {trendingProducts.slice(0, 4).map((product) => (
+                        <div key={product.id} className="recent-item glass-card glass-card-sm" onClick={() => goToProduct(product)}>
+                            <span className="recent-emoji">{product.image}</span>
+                            <div className="recent-info">
+                                <span className="recent-name">{product.name}</span>
+                                <span className="recent-time">2 hours ago</span>
+                            </div>
+                            <div className="recent-grade" style={{ color: getGradeColor(product.grade) }}>
+                                {product.grade}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </section>
+        </div>
+    );
+}
+```
+```diff:App.jsx
+import { useState } from 'react';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { useAuth } from './context/AuthContext';
+import Sidebar from './components/Sidebar';
+import Topbar from './components/Topbar';
+import Home from './pages/Home';
+import Dashboard from './pages/Dashboard';
+import Finder from './pages/Finder';
+import SettingsPage from './pages/Settings';
+import Login from './pages/Login';
+import Register from './pages/Register';
+
+function ProtectedRoute({ children }) {
+    const { isAuthenticated } = useAuth();
+    const location = useLocation();
+
+    if (!isAuthenticated) {
+        return <Navigate to="/login" state={{ from: location }} replace />;
+    }
+
+    return children;
+}
+
+export default function App() {
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    const location = useLocation();
+
+    // Auth pages get a clean layout (no sidebar/topbar)
+    const isAuthPage = location.pathname === '/login' || location.pathname === '/register';
+
+    if (isAuthPage) {
+        return (
+            <Routes>
+                <Route path="/login" element={<Login />} />
+                <Route path="/register" element={<Register />} />
+            </Routes>
+        );
+    }
+
+    return (
+        <div className="app-layout">
+            <div className="page-bg-mesh" />
+            <Sidebar
+                collapsed={sidebarCollapsed}
+                onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+            />
+            <div className={`main-area ${sidebarCollapsed ? 'collapsed' : ''}`}>
+                <Topbar collapsed={sidebarCollapsed} />
+                <div className="page-content">
+                    <Routes>
+                        <Route path="/" element={<Home />} />
+                        <Route path="/dashboard" element={
+                            <ProtectedRoute><Dashboard /></ProtectedRoute>
+                        } />
+                        <Route path="/finder" element={
+                            <ProtectedRoute><Finder /></ProtectedRoute>
+                        } />
+                        <Route path="/settings" element={
+                            <ProtectedRoute><SettingsPage /></ProtectedRoute>
+                        } />
+                        <Route path="*" element={<Navigate to="/" replace />} />
+                    </Routes>
+                </div>
+            </div>
+        </div>
+    );
+}
+===
+import { useState } from 'react';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { useAuth } from './context/AuthContext';
+import Sidebar from './components/Sidebar';
+import Topbar from './components/Topbar';
+import Home from './pages/Home';
+import Dashboard from './pages/Dashboard';
+import Finder from './pages/Finder';
+import SettingsPage from './pages/Settings';
+import Compare from './pages/Compare';
+import Login from './pages/Login';
+import Register from './pages/Register';
+
+function ProtectedRoute({ children }) {
+    const { isAuthenticated } = useAuth();
+    const location = useLocation();
+
+    if (!isAuthenticated) {
+        return <Navigate to="/login" state={{ from: location }} replace />;
+    }
+
+    return children;
+}
+
+export default function App() {
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    const location = useLocation();
+
+    // Auth pages get a clean layout (no sidebar/topbar)
+    const isAuthPage = location.pathname === '/login' || location.pathname === '/register';
+
+    if (isAuthPage) {
+        return (
+            <Routes>
+                <Route path="/login" element={<Login />} />
+                <Route path="/register" element={<Register />} />
+            </Routes>
+        );
+    }
+
+    return (
+        <div className="app-layout">
+            <div className="page-bg-mesh" />
+            <Sidebar
+                collapsed={sidebarCollapsed}
+                onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+            />
+            <div className={`main-area ${sidebarCollapsed ? 'collapsed' : ''}`}>
+                <Topbar collapsed={sidebarCollapsed} />
+                <div className="page-content">
+                    <Routes>
+                        <Route path="/" element={<Home />} />
+                        <Route path="/dashboard" element={
+                            <ProtectedRoute><Dashboard /></ProtectedRoute>
+                        } />
+                        <Route path="/finder" element={
+                            <ProtectedRoute><Finder /></ProtectedRoute>
+                        } />
+                        <Route path="/settings" element={
+                            <ProtectedRoute><SettingsPage /></ProtectedRoute>
+                        } />
+                        <Route path="/compare" element={
+                            <ProtectedRoute><Compare /></ProtectedRoute>
+                        } />
+                        <Route path="*" element={<Navigate to="/" replace />} />
+                    </Routes>
+                </div>
+            </div>
+        </div>
+    );
+}
+```
+```diff:Sidebar.jsx
+import { useState } from 'react';
+import { NavLink } from 'react-router-dom';
+import {
+    LayoutDashboard, Home, Search, Settings, ChevronLeft,
+    ChevronRight, Zap, TrendingUp, Crown, HelpCircle
+} from 'lucide-react';
+import './Sidebar.css';
+
+const navItems = [
+    { path: '/', icon: Home, label: 'Home' },
+    { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+    { path: '/finder', icon: Search, label: 'Product Finder' },
+    { path: '/settings', icon: Settings, label: 'Settings' },
+];
+
+export default function Sidebar({ collapsed, onToggle }) {
+    return (
+        <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
+            <div className="sidebar-inner">
+                {/* Logo */}
+                <div className="sidebar-logo">
+                    <div className="logo-icon">
+                        <Zap size={22} />
+                    </div>
+                    {!collapsed && (
+                        <div className="logo-text">
+                            <span className="logo-name">DropGravity</span>
+                            <span className="logo-badge">PRO</span>
+                        </div>
+                    )}
+                </div>
+
+                {/* Nav Links */}
+                <nav className="sidebar-nav">
+                    <div className="nav-section-label">{!collapsed && 'MAIN MENU'}</div>
+                    {navItems.map((item) => (
+                        <NavLink
+                            key={item.path}
+                            to={item.path}
+                            end={item.path === '/'}
+                            className={({ isActive }) =>
+                                `nav-item ${isActive ? 'active' : ''}`
+                            }
+                        >
+                            <item.icon size={20} />
+                            {!collapsed && <span>{item.label}</span>}
+                        </NavLink>
+                    ))}
+                </nav>
+
+                {/* Upgrade CTA */}
+                {!collapsed && (
+                    <div className="sidebar-upgrade">
+                        <div className="upgrade-card">
+                            <Crown size={20} className="upgrade-icon" />
+                            <div className="upgrade-text">
+                                <strong>Upgrade to Pro</strong>
+                                <span>Unlimited scans & AI insights</span>
+                            </div>
+                            <button className="btn btn-primary btn-sm" style={{ width: '100%' }}>
+                                Upgrade Now
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Collapse Toggle */}
+                <button className="sidebar-toggle" onClick={onToggle}>
+                    {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+                </button>
+            </div>
+        </aside>
+    );
+}
+===
+import { useState } from 'react';
+import { NavLink } from 'react-router-dom';
+import {
+    LayoutDashboard, Home, Search, Settings, ChevronLeft,
+    ChevronRight, Zap, TrendingUp, Crown, HelpCircle, GitCompareArrows
+} from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import './Sidebar.css';
+
+const navItems = [
+    { path: '/', icon: Home, label: 'Home' },
+    { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+    { path: '/finder', icon: Search, label: 'Product Finder' },
+    { path: '/compare', icon: GitCompareArrows, label: 'Compare' },
+    { path: '/settings', icon: Settings, label: 'Settings' },
+];
+
+export default function Sidebar({ collapsed, onToggle }) {
+    const { user } = useAuth();
+    const showUpgrade = !user?.plan || user.plan === 'free';
+
+    return (
+        <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
+            <div className="sidebar-inner">
+                {/* Logo */}
+                <div className="sidebar-logo">
+                    <div className="logo-icon">
+                        <Zap size={22} />
+                    </div>
+                    {!collapsed && (
+                        <div className="logo-text">
+                            <span className="logo-name">DropGravity</span>
+                            <span className="logo-badge">PRO</span>
+                        </div>
+                    )}
+                </div>
+
+                {/* Nav Links */}
+                <nav className="sidebar-nav">
+                    <div className="nav-section-label">{!collapsed && 'MAIN MENU'}</div>
+                    {navItems.map((item) => (
+                        <NavLink
+                            key={item.path}
+                            to={item.path}
+                            end={item.path === '/'}
+                            className={({ isActive }) =>
+                                `nav-item ${isActive ? 'active' : ''}`
+                            }
+                        >
+                            <item.icon size={20} />
+                            {!collapsed && <span>{item.label}</span>}
+                        </NavLink>
+                    ))}
+                </nav>
+
+                {/* Upgrade CTA */}
+                {!collapsed && showUpgrade && (
+                    <div className="sidebar-upgrade">
+                        <div className="upgrade-card">
+                            <Crown size={20} className="upgrade-icon" />
+                            <div className="upgrade-text">
+                                <strong>Upgrade to Pro</strong>
+                                <span>Unlimited scans & AI insights</span>
+                            </div>
+                            <button className="btn btn-primary btn-sm" style={{ width: '100%' }}>
+                                Upgrade Now
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Collapse Toggle */}
+                <button className="sidebar-toggle" onClick={onToggle}>
+                    {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+                </button>
+            </div>
+        </aside>
+    );
+}
+```
+```diff:Dashboard.jsx
+import { useState, useEffect, useCallback, useRef } from 'react';
+import {
+    LineChart, Line, AreaChart, Area, BarChart, Bar,
+    XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell
+} from 'recharts';
+import {
+    TrendingUp, TrendingDown, AlertTriangle, CheckCircle,
+    DollarSign, Target, Users, Zap, ShieldCheck,
+    MessageSquare, BarChart3, ArrowUpRight, ArrowDownRight, RefreshCw, Download,
+    Clock, Package, Loader2
+} from 'lucide-react';
+import { useLocation } from 'react-router-dom';
+import { dailyAGrade, trendChartData, demandForecast, revenueData } from '../data/mockData';
+import { gradeProduct, getGradeColor, getLetterGrade } from '../engine/gradingEngine';
+import { useAuth } from '../context/AuthContext';
+import { fetchMyProducts, gradeProductAPI } from '../services/api';
+import './Dashboard.css';
+
+const CustomTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+        return (
+            <div className="chart-tooltip">
+                <p className="tooltip-label">{label}</p>
+                {payload.map((p, i) => (
+                    <p key={i} style={{ color: p.color }}>
+                        {p.name}: {p.value}
+                    </p>
+                ))}
+            </div>
+        );
+    }
+    return null;
+};
+
+export default function Dashboard() {
+    const { isAuthenticated } = useAuth();
+    const location = useLocation();
+    const hasSaved = useRef(false);
+
+    // Get product from navigation state, fallback to dailyAGrade
+    const incomingProduct = location.state?.product;
+    const [product] = useState(incomingProduct || dailyAGrade);
+    const [savedProducts, setSavedProducts] = useState([]);
+    const [loadingSaved, setLoadingSaved] = useState(false);
+    const [grading, setGrading] = useState(false);
+
+    const loadSavedProducts = useCallback(async () => {
+        if (!isAuthenticated) return;
+        setLoadingSaved(true);
+        try {
+            const data = await fetchMyProducts();
+            setSavedProducts(data);
+        } catch (err) {
+            console.error('Failed to load saved products:', err);
+        } finally {
+            setLoadingSaved(false);
+        }
+    }, [isAuthenticated]);
+
+    // Load saved products on mount
+    useEffect(() => {
+        loadSavedProducts();
+    }, [loadSavedProducts]);
+
+    // Grade product via backend API (once per navigation)
+    useEffect(() => {
+        if (!isAuthenticated || !incomingProduct || hasSaved.current) return;
+
+        const saveToBackend = async () => {
+            hasSaved.current = true;
+            setGrading(true);
+            try {
+                await gradeProductAPI({
+                    productName: incomingProduct.name,
+                    profitMargin: incomingProduct.profitMargin,
+                    trendVelocity: incomingProduct.trendVelocity,
+                    adCompetition: incomingProduct.adCompetition,
+                    cpcForecast: incomingProduct.cpcForecast,
+                    supplierReliability: incomingProduct.supplierReliability,
+                    reviewSentiment: incomingProduct.reviewSentiment,
+                    marketSaturation: incomingProduct.marketSaturation,
+                });
+                // Refresh saved products after successful grade
+                await loadSavedProducts();
+            } catch (err) {
+                console.error('Failed to grade product:', err);
+            } finally {
+                setGrading(false);
+            }
+        };
+
+        saveToBackend();
+    }, [isAuthenticated, incomingProduct, loadSavedProducts]);
+
+    const analysis = gradeProduct({
+        profitMargin: product.profitMargin,
+        trendVelocity: product.trendVelocity,
+        adCompetition: product.adCompetition,
+        cpcForecast: product.cpcForecast,
+        supplierReliability: product.supplierReliability,
+        reviewSentiment: product.reviewSentiment,
+        marketSaturation: product.marketSaturation,
+    });
+
+    const riskPercentage = analysis.risk.score;
+    const saturationPercentage = product.marketSaturation;
+
+    const formatDate = (dateStr) => {
+        return new Date(dateStr).toLocaleDateString('en-US', {
+            month: 'short', day: 'numeric', year: 'numeric',
+            hour: '2-digit', minute: '2-digit',
+        });
+    };
+
+    const metricsCards = [
+        { label: 'Profit Margin', value: `${product.profitMargin}%`, icon: DollarSign, color: '#10b981', change: '+5.2%', up: true },
+        { label: 'Competition Index', value: `${product.adCompetition}/100`, icon: Users, color: '#06b6d4', change: '-2.1%', up: false },
+        { label: 'Trend Momentum', value: `${product.trendVelocity}/100`, icon: TrendingUp, color: '#8b5cf6', change: '+12.4%', up: true },
+        { label: 'CPC Estimate', value: `$${(product.cpcForecast * 0.05).toFixed(2)}`, icon: Target, color: '#f59e0b', change: '+0.8%', up: true },
+        { label: 'Conversion Prob.', value: '3.2%', icon: Zap, color: '#ec4899', change: '+0.4%', up: true },
+        { label: 'Supplier Trust', value: `${product.supplierReliability}/100`, icon: ShieldCheck, color: '#10b981', change: '+1.0%', up: true },
+    ];
+
+    return (
+        <div className="dashboard-page">
+            {/* Top Bar */}
+            <div className="dash-header animate-fade-in-up">
+                <div className="dash-header-left">
+                    <div className="dash-product-icon">{product.image}</div>
+                    <div>
+                        <h1 className="dash-product-name">{product.name}</h1>
+                        <div className="dash-product-meta">
+                            <span className="badge badge-info">{product.category}</span>
+                            <span className="badge badge-purple">{product.orders.toLocaleString()} orders</span>
+                        </div>
+                    </div>
+                </div>
+                <div className="dash-header-actions">
+                    <button className="btn btn-secondary btn-sm"><RefreshCw size={14} /> Re-Grade</button>
+                    <button className="btn btn-secondary btn-sm"><Download size={14} /> Export</button>
+                </div>
+            </div>
+
+            {/* Grade + Risk + Saturation + ROI */}
+            <div className="dash-top-row animate-fade-in-up delay-1">
+                {/* Grade Badge */}
+                <div className="grade-card glass-card">
+                    <div className="grade-label">Overall Grade</div>
+                    <div className="grade-circle" style={{ '--grade-color': getGradeColor(analysis.grade) }}>
+                        <span className="grade-letter">{analysis.grade}</span>
+                    </div>
+                    <div className="grade-score">{analysis.score}/100</div>
+                    <div className="grade-tag" style={{ color: getGradeColor(analysis.grade) }}>
+                        {analysis.grade === 'A' ? 'Excellent' : analysis.grade === 'B' ? 'Good' : analysis.grade === 'C' ? 'Average' : 'Below Average'}
+                    </div>
+                </div>
+
+                {/* Risk Meter */}
+                <div className="risk-card glass-card">
+                    <div className="risk-label">Risk Level</div>
+                    <div className="risk-gauge">
+                        <svg viewBox="0 0 120 70" className="risk-svg">
+                            <path d="M10 65 A50 50 0 0 1 110 65" fill="none" stroke="var(--bg-tertiary)" strokeWidth="8" strokeLinecap="round" />
+                            <path d="M10 65 A50 50 0 0 1 110 65" fill="none" stroke={analysis.risk.color} strokeWidth="8" strokeLinecap="round"
+                                strokeDasharray={`${(riskPercentage / 100) * 157} 157`}
+                                style={{ transition: 'stroke-dasharray 1s ease' }}
+                            />
+                        </svg>
+                        <div className="risk-value" style={{ color: analysis.risk.color }}>
+                            {analysis.risk.level}
+                        </div>
+                    </div>
+                    <div className="risk-score">{riskPercentage}% risk score</div>
+                </div>
+
+                {/* Saturation */}
+                <div className="saturation-card glass-card">
+                    <div className="sat-label">Market Saturation</div>
+                    <div className="sat-value">{saturationPercentage}%</div>
+                    <div className="meter-track">
+                        <div
+                            className={`meter-fill`}
+                            style={{
+                                width: `${saturationPercentage}%`,
+                                background: saturationPercentage < 40 ? 'var(--gradient-success)' :
+                                    saturationPercentage < 65 ? 'linear-gradient(90deg, #f59e0b, #f97316)' :
+                                        'var(--gradient-danger)'
+                            }}
+                        />
+                    </div>
+                    <div className="sat-status" style={{
+                        color: saturationPercentage < 40 ? '#10b981' : saturationPercentage < 65 ? '#f59e0b' : '#ef4444'
+                    }}>
+                        {saturationPercentage < 40 ? 'Low — Great opportunity' : saturationPercentage < 65 ? 'Moderate — Proceed carefully' : 'High — Risky market'}
+                    </div>
+                </div>
+
+                {/* ROI */}
+                <div className="roi-card glass-card">
+                    <div className="roi-label">Expected ROI</div>
+                    <div className="roi-value">
+                        {analysis.profitScenarios.likely.roi}%
+                        <ArrowUpRight size={20} className="roi-arrow" />
+                    </div>
+                    <div className="roi-scenarios">
+                        <div className="roi-scenario">
+                            <span className="rs-label">Best</span>
+                            <span className="rs-value" style={{ color: '#10b981' }}>{analysis.profitScenarios.best.roi}%</span>
+                        </div>
+                        <div className="roi-scenario">
+                            <span className="rs-label">Likely</span>
+                            <span className="rs-value" style={{ color: '#06b6d4' }}>{analysis.profitScenarios.likely.roi}%</span>
+                        </div>
+                        <div className="roi-scenario">
+                            <span className="rs-label">Worst</span>
+                            <span className="rs-value" style={{ color: '#ef4444' }}>{analysis.profitScenarios.worst.roi}%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Metrics Grid */}
+            <div className="metrics-grid animate-fade-in-up delay-2">
+                {metricsCards.map((m, i) => (
+                    <div key={i} className="metric-card glass-card glass-card-sm">
+                        <div className="metric-header">
+                            <div className="metric-icon" style={{ background: `${m.color}18`, color: m.color }}>
+                                <m.icon size={18} />
+                            </div>
+                            <div className={`metric-change ${m.up ? 'up' : 'down'}`}>
+                                {m.up ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
+                                {m.change}
+                            </div>
+                        </div>
+                        <div className="metric-value">{m.value}</div>
+                        <div className="metric-label">{m.label}</div>
+                    </div>
+                ))}
+            </div>
+
+            {/* Charts Row */}
+            <div className="charts-row animate-fade-in-up delay-3">
+                {/* Trend Chart */}
+                <div className="chart-card glass-card">
+                    <div className="chart-header">
+                        <h3><TrendingUp size={16} /> Google Trend</h3>
+                    </div>
+                    <div className="chart-body">
+                        <ResponsiveContainer width="100%" height={240}>
+                            <AreaChart data={trendChartData}>
+                                <defs>
+                                    <linearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
+                                        <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                                <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                <Tooltip content={<CustomTooltip />} />
+                                <Area type="monotone" dataKey="interest" stroke="#8b5cf6" fill="url(#trendGradient)" strokeWidth={2} name="Interest" />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                {/* Competition Spike */}
+                <div className="chart-card glass-card">
+                    <div className="chart-header">
+                        <h3><Users size={16} /> Competition</h3>
+                    </div>
+                    <div className="chart-body">
+                        <ResponsiveContainer width="100%" height={240}>
+                            <AreaChart data={trendChartData}>
+                                <defs>
+                                    <linearGradient id="compGradient" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3} />
+                                        <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                                <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                <Tooltip content={<CustomTooltip />} />
+                                <Area type="monotone" dataKey="competition" stroke="#06b6d4" fill="url(#compGradient)" strokeWidth={2} name="Competition" />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+            </div>
+
+            {/* Bottom Charts */}
+            <div className="charts-row animate-fade-in-up delay-4">
+                {/* Revenue Breakdown */}
+                <div className="chart-card glass-card">
+                    <div className="chart-header">
+                        <h3><DollarSign size={16} /> Cost vs Revenue</h3>
+                    </div>
+                    <div className="chart-body">
+                        <ResponsiveContainer width="100%" height={240}>
+                            <BarChart data={revenueData} barSize={40}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                                <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} unit="$" />
+                                <Tooltip content={<CustomTooltip />} />
+                                <Bar dataKey="value" radius={[6, 6, 0, 0]} name="Amount">
+                                    {revenueData.map((entry, index) => (
+                                        <Cell key={index} fill={entry.fill} />
+                                    ))}
+                                </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                {/* Demand Forecast */}
+                <div className="chart-card glass-card">
+                    <div className="chart-header">
+                        <h3><BarChart3 size={16} /> 30-Day Demand Forecast</h3>
+                    </div>
+                    <div className="chart-body">
+                        <ResponsiveContainer width="100%" height={240}>
+                            <LineChart data={demandForecast}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                                <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                <Tooltip content={<CustomTooltip />} />
+                                <Line type="monotone" dataKey="actual" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 4, fill: '#8b5cf6' }} name="Actual" connectNulls={false} />
+                                <Line type="monotone" dataKey="forecast" stroke="#06b6d4" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 4, fill: '#06b6d4' }} name="Forecast" />
+                            </LineChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+            </div>
+
+            {/* Saved Products */}
+            <div className="saved-products-section animate-fade-in-up delay-4">
+                <div className="glass-card">
+                    <div className="saved-header">
+                        <h3 className="suggestions-title">
+                            <Package size={18} /> Your Saved Products
+                        </h3>
+                        {isAuthenticated && (
+                            <button
+                                className="btn btn-secondary btn-sm"
+                                onClick={loadSavedProducts}
+                                disabled={loadingSaved}
+                            >
+                                <RefreshCw size={14} className={loadingSaved ? 'spin-icon' : ''} />
+                                Refresh
+                            </button>
+                        )}
+                    </div>
+
+                    {!isAuthenticated ? (
+                        <div className="saved-empty">
+                            <ShieldCheck size={32} />
+                            <p>Login to see your graded products</p>
+                        </div>
+                    ) : loadingSaved ? (
+                        <div className="saved-loading">
+                            <Loader2 size={24} className="spin-icon" />
+                            <p>Loading your products...</p>
+                        </div>
+                    ) : savedProducts.length === 0 ? (
+                        <div className="saved-empty">
+                            <Package size={32} />
+                            <p>No products graded yet</p>
+                            <span>Grade a product to see it here</span>
+                        </div>
+                    ) : (
+                        <div className="saved-products-list">
+                            {savedProducts.map((sp) => (
+                                <div key={sp._id} className="saved-product-row">
+                                    <div className="sp-grade-badge" style={{
+                                        background: `${getGradeColor(sp.grade)}22`,
+                                        color: getGradeColor(sp.grade),
+                                        border: `1px solid ${getGradeColor(sp.grade)}44`,
+                                    }}>
+                                        {sp.grade}
+                                    </div>
+                                    <div className="sp-info">
+                                        <span className="sp-name">{sp.productName}</span>
+                                        <span className="sp-date">
+                                            <Clock size={11} />
+                                            {formatDate(sp.createdAt)}
+                                        </span>
+                                    </div>
+                                    <div className="sp-score">
+                                        <span className="sp-score-value">{sp.score}</span>
+                                        <span className="sp-score-label">/100</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* AI Suggestions */}
+            <div className="suggestions-section animate-fade-in-up delay-5">
+                <div className="glass-card">
+                    <h3 className="suggestions-title">
+                        <Zap size={18} /> AI Insights & Suggestions
+                    </h3>
+                    <div className="suggestions-list">
+                        {analysis.suggestions.map((s, i) => (
+                            <div key={i} className="suggestion-item">
+                                <div className="suggestion-icon">
+                                    {i === 0 ? <CheckCircle size={16} /> : <AlertTriangle size={16} />}
+                                </div>
+                                <p>{s}</p>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Weak Metrics */}
+                {analysis.weakMetrics.length > 0 && (
+                    <div className="glass-card weak-metrics-card">
+                        <h3 className="suggestions-title">
+                            <AlertTriangle size={18} /> Flagged Weak Metrics
+                        </h3>
+                        <div className="weak-metrics-list">
+                            {analysis.weakMetrics.map((wm, i) => (
+                                <div key={i} className="weak-metric-item">
+                                    <span className="wm-name">{wm.name}</span>
+                                    <div className="wm-bar-track">
+                                        <div className="wm-bar-fill" style={{ width: `${wm.value}%`, background: 'var(--gradient-danger)' }} />
+                                    </div>
+                                    <span className="wm-value">{wm.value}/100</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+===
+import { useState, useEffect, useCallback, useRef } from 'react';
+import {
+    LineChart, Line, AreaChart, Area, BarChart, Bar,
+    XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell
+} from 'recharts';
+import {
+    TrendingUp, TrendingDown, AlertTriangle, CheckCircle, CheckCircle2,
+    DollarSign, Target, Users, Zap, ShieldCheck,
+    MessageSquare, BarChart3, ArrowUpRight, ArrowDownRight, RefreshCw, Download,
+    Clock, Package, Loader2, XCircle
+} from 'lucide-react';
+import { useLocation } from 'react-router-dom';
+import { dailyAGrade, trendChartData, demandForecast, revenueData } from '../data/mockData';
+import { gradeProduct, getGradeColor, getLetterGrade } from '../engine/gradingEngine';
+import { useAuth } from '../context/AuthContext';
+import { fetchMyProducts, gradeProductAPI } from '../services/api';
+import './Dashboard.css';
+
+const CustomTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+        return (
+            <div className="chart-tooltip">
+                <p className="tooltip-label">{label}</p>
+                {payload.map((p, i) => (
+                    <p key={i} style={{ color: p.color }}>
+                        {p.name}: {p.value}
+                    </p>
+                ))}
+            </div>
+        );
+    }
+    return null;
+};
+
+export default function Dashboard() {
+    const { isAuthenticated } = useAuth();
+    const location = useLocation();
+    const hasSaved = useRef(false);
+
+    // Get product from navigation state, fallback to dailyAGrade
+    const incomingProduct = location.state?.product;
+    const [product] = useState(incomingProduct || dailyAGrade);
+    const [savedProducts, setSavedProducts] = useState([]);
+    const [loadingSaved, setLoadingSaved] = useState(false);
+    const [grading, setGrading] = useState(false);
+    const [regrading, setRegrading] = useState(false);
+    const [toast, setToast] = useState({ message: '', type: 'success', visible: false });
+
+    const showToast = (message, type = 'success') => {
+        setToast({ message, type, visible: true });
+        setTimeout(() => setToast(prev => ({ ...prev, visible: false })), 3000);
+    };
+
+    const loadSavedProducts = useCallback(async () => {
+        if (!isAuthenticated) return;
+        setLoadingSaved(true);
+        try {
+            const data = await fetchMyProducts();
+            setSavedProducts(data);
+        } catch (err) {
+            console.error('Failed to load saved products:', err);
+        } finally {
+            setLoadingSaved(false);
+        }
+    }, [isAuthenticated]);
+
+    // Load saved products on mount
+    useEffect(() => {
+        loadSavedProducts();
+    }, [loadSavedProducts]);
+
+    // Grade product via backend API (once per navigation)
+    useEffect(() => {
+        if (!isAuthenticated || !incomingProduct || hasSaved.current) return;
+
+        const saveToBackend = async () => {
+            hasSaved.current = true;
+            setGrading(true);
+            try {
+                await gradeProductAPI({
+                    productName: incomingProduct.name,
+                    profitMargin: incomingProduct.profitMargin,
+                    trendVelocity: incomingProduct.trendVelocity,
+                    adCompetition: incomingProduct.adCompetition,
+                    cpcForecast: incomingProduct.cpcForecast,
+                    supplierReliability: incomingProduct.supplierReliability,
+                    reviewSentiment: incomingProduct.reviewSentiment,
+                    marketSaturation: incomingProduct.marketSaturation,
+                });
+                // Refresh saved products after successful grade
+                await loadSavedProducts();
+                showToast(`${incomingProduct.name} graded & saved successfully!`, 'success');
+            } catch (err) {
+                console.error('Failed to grade product:', err);
+                showToast('Failed to grade product. Please try again.', 'error');
+            } finally {
+                setGrading(false);
+            }
+        };
+
+        saveToBackend();
+    }, [isAuthenticated, incomingProduct, loadSavedProducts]);
+
+    const analysis = gradeProduct({
+        profitMargin: product.profitMargin,
+        trendVelocity: product.trendVelocity,
+        adCompetition: product.adCompetition,
+        cpcForecast: product.cpcForecast,
+        supplierReliability: product.supplierReliability,
+        reviewSentiment: product.reviewSentiment,
+        marketSaturation: product.marketSaturation,
+    });
+
+    const riskPercentage = analysis.risk.score;
+    const saturationPercentage = product.marketSaturation;
+
+    const handleReGrade = async () => {
+        if (regrading || !isAuthenticated) return;
+        setRegrading(true);
+        try {
+            await gradeProductAPI({
+                productName: product.name,
+                profitMargin: product.profitMargin,
+                trendVelocity: product.trendVelocity,
+                adCompetition: product.adCompetition,
+                cpcForecast: product.cpcForecast,
+                supplierReliability: product.supplierReliability,
+                reviewSentiment: product.reviewSentiment,
+                marketSaturation: product.marketSaturation,
+            });
+            await loadSavedProducts();
+            showToast(`${product.name} re-graded successfully!`, 'success');
+        } catch (err) {
+            console.error('Re-grade failed:', err);
+            showToast('Re-grade failed. Please try again.', 'error');
+        } finally {
+            setRegrading(false);
+        }
+    };
+
+    const formatDate = (dateStr) => {
+        return new Date(dateStr).toLocaleDateString('en-US', {
+            month: 'short', day: 'numeric', year: 'numeric',
+            hour: '2-digit', minute: '2-digit',
+        });
+    };
+
+    const metricsCards = [
+        { label: 'Profit Margin', value: `${product.profitMargin}%`, icon: DollarSign, color: '#10b981', change: '+5.2%', up: true },
+        { label: 'Competition Index', value: `${product.adCompetition}/100`, icon: Users, color: '#06b6d4', change: '-2.1%', up: false },
+        { label: 'Trend Momentum', value: `${product.trendVelocity}/100`, icon: TrendingUp, color: '#8b5cf6', change: '+12.4%', up: true },
+        { label: 'CPC Estimate', value: `$${(product.cpcForecast * 0.05).toFixed(2)}`, icon: Target, color: '#f59e0b', change: '+0.8%', up: true },
+        { label: 'Conversion Prob.', value: '3.2%', icon: Zap, color: '#ec4899', change: '+0.4%', up: true },
+        { label: 'Supplier Trust', value: `${product.supplierReliability}/100`, icon: ShieldCheck, color: '#10b981', change: '+1.0%', up: true },
+    ];
+
+    return (
+        <div className="dashboard-page">
+            {/* Top Bar */}
+            <div className="dash-header animate-fade-in-up">
+                <div className="dash-header-left">
+                    <div className="dash-product-icon">{product.image}</div>
+                    <div>
+                        <h1 className="dash-product-name">{product.name}</h1>
+                        <div className="dash-product-meta">
+                            <span className="badge badge-info">{product.category}</span>
+                            <span className="badge badge-purple">{product.orders.toLocaleString()} orders</span>
+                        </div>
+                    </div>
+                </div>
+                <div className="dash-header-actions">
+                    <button className="btn btn-secondary btn-sm" onClick={handleReGrade} disabled={regrading}>
+                        {regrading ? <Loader2 size={14} className="spin-icon" /> : <RefreshCw size={14} />}
+                        {regrading ? 'Re-Grading...' : 'Re-Grade'}
+                    </button>
+                    <button className="btn btn-secondary btn-sm"><Download size={14} /> Export</button>
+                </div>
+            </div>
+
+            {/* Grade + Risk + Saturation + ROI */}
+            <div className="dash-top-row animate-fade-in-up delay-1">
+                {/* Grade Badge */}
+                <div className="grade-card glass-card">
+                    <div className="grade-label">Overall Grade</div>
+                    <div className="grade-circle" style={{ '--grade-color': getGradeColor(analysis.grade) }}>
+                        <span className="grade-letter">{analysis.grade}</span>
+                    </div>
+                    <div className="grade-score">{analysis.score}/100</div>
+                    <div className="grade-tag" style={{ color: getGradeColor(analysis.grade) }}>
+                        {analysis.grade === 'A' ? 'Excellent' : analysis.grade === 'B' ? 'Good' : analysis.grade === 'C' ? 'Average' : 'Below Average'}
+                    </div>
+                </div>
+
+                {/* Risk Meter */}
+                <div className="risk-card glass-card">
+                    <div className="risk-label">Risk Level</div>
+                    <div className="risk-gauge">
+                        <svg viewBox="0 0 120 70" className="risk-svg">
+                            <path d="M10 65 A50 50 0 0 1 110 65" fill="none" stroke="var(--bg-tertiary)" strokeWidth="8" strokeLinecap="round" />
+                            <path d="M10 65 A50 50 0 0 1 110 65" fill="none" stroke={analysis.risk.color} strokeWidth="8" strokeLinecap="round"
+                                strokeDasharray={`${(riskPercentage / 100) * 157} 157`}
+                                style={{ transition: 'stroke-dasharray 1s ease' }}
+                            />
+                        </svg>
+                        <div className="risk-value" style={{ color: analysis.risk.color }}>
+                            {analysis.risk.level}
+                        </div>
+                    </div>
+                    <div className="risk-score">{riskPercentage}% risk score</div>
+                </div>
+
+                {/* Saturation */}
+                <div className="saturation-card glass-card">
+                    <div className="sat-label">Market Saturation</div>
+                    <div className="sat-value">{saturationPercentage}%</div>
+                    <div className="meter-track">
+                        <div
+                            className={`meter-fill`}
+                            style={{
+                                width: `${saturationPercentage}%`,
+                                background: saturationPercentage < 40 ? 'var(--gradient-success)' :
+                                    saturationPercentage < 65 ? 'linear-gradient(90deg, #f59e0b, #f97316)' :
+                                        'var(--gradient-danger)'
+                            }}
+                        />
+                    </div>
+                    <div className="sat-status" style={{
+                        color: saturationPercentage < 40 ? '#10b981' : saturationPercentage < 65 ? '#f59e0b' : '#ef4444'
+                    }}>
+                        {saturationPercentage < 40 ? 'Low — Great opportunity' : saturationPercentage < 65 ? 'Moderate — Proceed carefully' : 'High — Risky market'}
+                    </div>
+                </div>
+
+                {/* ROI */}
+                <div className="roi-card glass-card">
+                    <div className="roi-label">Expected ROI</div>
+                    <div className="roi-value">
+                        {analysis.profitScenarios.likely.roi}%
+                        <ArrowUpRight size={20} className="roi-arrow" />
+                    </div>
+                    <div className="roi-scenarios">
+                        <div className="roi-scenario">
+                            <span className="rs-label">Best</span>
+                            <span className="rs-value" style={{ color: '#10b981' }}>{analysis.profitScenarios.best.roi}%</span>
+                        </div>
+                        <div className="roi-scenario">
+                            <span className="rs-label">Likely</span>
+                            <span className="rs-value" style={{ color: '#06b6d4' }}>{analysis.profitScenarios.likely.roi}%</span>
+                        </div>
+                        <div className="roi-scenario">
+                            <span className="rs-label">Worst</span>
+                            <span className="rs-value" style={{ color: '#ef4444' }}>{analysis.profitScenarios.worst.roi}%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Metrics Grid */}
+            <div className="metrics-grid animate-fade-in-up delay-2">
+                {metricsCards.map((m, i) => (
+                    <div key={i} className="metric-card glass-card glass-card-sm">
+                        <div className="metric-header">
+                            <div className="metric-icon" style={{ background: `${m.color}18`, color: m.color }}>
+                                <m.icon size={18} />
+                            </div>
+                            <div className={`metric-change ${m.up ? 'up' : 'down'}`}>
+                                {m.up ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
+                                {m.change}
+                            </div>
+                        </div>
+                        <div className="metric-value">{m.value}</div>
+                        <div className="metric-label">{m.label}</div>
+                    </div>
+                ))}
+            </div>
+
+            {/* Charts Row */}
+            <div className="charts-row animate-fade-in-up delay-3">
+                {/* Trend Chart */}
+                <div className="chart-card glass-card">
+                    <div className="chart-header">
+                        <h3><TrendingUp size={16} /> Google Trend</h3>
+                    </div>
+                    <div className="chart-body">
+                        <ResponsiveContainer width="100%" height={240}>
+                            <AreaChart data={trendChartData}>
+                                <defs>
+                                    <linearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
+                                        <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                                <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                <Tooltip content={<CustomTooltip />} />
+                                <Area type="monotone" dataKey="interest" stroke="#8b5cf6" fill="url(#trendGradient)" strokeWidth={2} name="Interest" />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                {/* Competition Spike */}
+                <div className="chart-card glass-card">
+                    <div className="chart-header">
+                        <h3><Users size={16} /> Competition</h3>
+                    </div>
+                    <div className="chart-body">
+                        <ResponsiveContainer width="100%" height={240}>
+                            <AreaChart data={trendChartData}>
+                                <defs>
+                                    <linearGradient id="compGradient" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3} />
+                                        <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                                <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                <Tooltip content={<CustomTooltip />} />
+                                <Area type="monotone" dataKey="competition" stroke="#06b6d4" fill="url(#compGradient)" strokeWidth={2} name="Competition" />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+            </div>
+
+            {/* Bottom Charts */}
+            <div className="charts-row animate-fade-in-up delay-4">
+                {/* Revenue Breakdown */}
+                <div className="chart-card glass-card">
+                    <div className="chart-header">
+                        <h3><DollarSign size={16} /> Cost vs Revenue</h3>
+                    </div>
+                    <div className="chart-body">
+                        <ResponsiveContainer width="100%" height={240}>
+                            <BarChart data={revenueData} barSize={40}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                                <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} unit="$" />
+                                <Tooltip content={<CustomTooltip />} />
+                                <Bar dataKey="value" radius={[6, 6, 0, 0]} name="Amount">
+                                    {revenueData.map((entry, index) => (
+                                        <Cell key={index} fill={entry.fill} />
+                                    ))}
+                                </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                {/* Demand Forecast */}
+                <div className="chart-card glass-card">
+                    <div className="chart-header">
+                        <h3><BarChart3 size={16} /> 30-Day Demand Forecast</h3>
+                    </div>
+                    <div className="chart-body">
+                        <ResponsiveContainer width="100%" height={240}>
+                            <LineChart data={demandForecast}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                                <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                <Tooltip content={<CustomTooltip />} />
+                                <Line type="monotone" dataKey="actual" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 4, fill: '#8b5cf6' }} name="Actual" connectNulls={false} />
+                                <Line type="monotone" dataKey="forecast" stroke="#06b6d4" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 4, fill: '#06b6d4' }} name="Forecast" />
+                            </LineChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+            </div>
+
+            {/* Saved Products */}
+            <div className="saved-products-section animate-fade-in-up delay-4">
+                <div className="glass-card">
+                    <div className="saved-header">
+                        <h3 className="suggestions-title">
+                            <Package size={18} /> Your Saved Products
+                        </h3>
+                        {isAuthenticated && (
+                            <button
+                                className="btn btn-secondary btn-sm"
+                                onClick={loadSavedProducts}
+                                disabled={loadingSaved}
+                            >
+                                <RefreshCw size={14} className={loadingSaved ? 'spin-icon' : ''} />
+                                Refresh
+                            </button>
+                        )}
+                    </div>
+
+                    {!isAuthenticated ? (
+                        <div className="saved-empty">
+                            <ShieldCheck size={32} />
+                            <p>Login to see your graded products</p>
+                        </div>
+                    ) : loadingSaved ? (
+                        <div className="saved-loading">
+                            <Loader2 size={24} className="spin-icon" />
+                            <p>Loading your products...</p>
+                        </div>
+                    ) : savedProducts.length === 0 ? (
+                        <div className="saved-empty">
+                            <Package size={32} />
+                            <p>No products graded yet</p>
+                            <span>Grade a product to see it here</span>
+                        </div>
+                    ) : (
+                        <div className="saved-products-list">
+                            {savedProducts.map((sp) => (
+                                <div key={sp._id} className="saved-product-row">
+                                    <div className="sp-grade-badge" style={{
+                                        background: `${getGradeColor(sp.grade)}33`,
+                                        color: getGradeColor(sp.grade),
+                                        border: `1px solid ${getGradeColor(sp.grade)}66`,
+                                    }}>
+                                        {sp.grade}
+                                    </div>
+                                    <div className="sp-info">
+                                        <span className="sp-name">
+                                            {sp.productName}
+                                            {sp.version > 1 && <span className="sp-version">v{sp.version}</span>}
+                                        </span>
+                                        <span className="sp-date">
+                                            <Clock size={11} />
+                                            {formatDate(sp.createdAt)}
+                                        </span>
+                                    </div>
+                                    <div className="sp-score">
+                                        <span className="sp-score-value">{sp.score}</span>
+                                        <span className="sp-score-label">/100</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* AI Suggestions */}
+            <div className="suggestions-section animate-fade-in-up delay-5">
+                <div className="glass-card">
+                    <h3 className="suggestions-title">
+                        <Zap size={18} /> AI Insights & Suggestions
+                    </h3>
+                    <div className="suggestions-list">
+                        {analysis.suggestions.map((s, i) => (
+                            <div key={i} className="suggestion-item">
+                                <div className="suggestion-icon">
+                                    {i === 0 ? <CheckCircle size={16} /> : <AlertTriangle size={16} />}
+                                </div>
+                                <p>{s}</p>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Weak Metrics */}
+                {analysis.weakMetrics.length > 0 && (
+                    <div className="glass-card weak-metrics-card">
+                        <h3 className="suggestions-title">
+                            <AlertTriangle size={18} /> Flagged Weak Metrics
+                        </h3>
+                        <div className="weak-metrics-list">
+                            {analysis.weakMetrics.map((wm, i) => (
+                                <div key={i} className="weak-metric-item">
+                                    <span className="wm-name">{wm.name}</span>
+                                    <div className="wm-bar-track">
+                                        <div className="wm-bar-fill" style={{ width: `${wm.value}%`, background: 'var(--gradient-danger)' }} />
+                                    </div>
+                                    <span className="wm-value">{wm.value}/100</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Toast Notification */}
+            <div className={`toast-container ${toast.visible ? 'visible' : ''}`}>
+                <div className={`toast toast-${toast.type}`}>
+                    {toast.type === 'success' ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
+                    <span>{toast.message}</span>
+                </div>
+            </div>
+        </div>
+    );
+}
+```
+```diff:Dashboard.css
+/* Dashboard Styles */
+
+.dashboard-page {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    position: relative;
+    z-index: 1;
+}
+
+/* Header */
+.dash-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.dash-header-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.dash-product-icon {
+    font-size: 2.5rem;
+    width: 56px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-glass);
+    border-radius: var(--radius-md);
+}
+
+.dash-product-name {
+    font-size: 1.4rem;
+    font-weight: 800;
+}
+
+.dash-product-meta {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.dash-header-actions {
+    display: flex;
+    gap: 8px;
+}
+
+/* Top Row */
+.dash-top-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+}
+
+/* Grade Card */
+.grade-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 8px;
+}
+
+.grade-label {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+}
+
+.grade-circle {
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    border: 4px solid var(--grade-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 30px color-mix(in srgb, var(--grade-color) 30%, transparent);
+    animation: pulse-glow 2.5s infinite;
+}
+
+.grade-letter {
+    font-size: 3rem;
+    font-weight: 900;
+    color: var(--grade-color);
+    line-height: 1;
+}
+
+.grade-score {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.grade-tag {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Risk Card */
+.risk-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 4px;
+}
+
+.risk-label {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+}
+
+.risk-gauge {
+    position: relative;
+    width: 120px;
+    height: 70px;
+}
+
+.risk-svg {
+    width: 100%;
+    height: 100%;
+}
+
+.risk-value {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 1.1rem;
+    font-weight: 800;
+}
+
+.risk-score {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+}
+
+/* Saturation */
+.saturation-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.sat-label {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+}
+
+.sat-value {
+    font-size: 2rem;
+    font-weight: 900;
+}
+
+.sat-status {
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+/* ROI */
+.roi-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.roi-label {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+}
+
+.roi-value {
+    font-size: 2rem;
+    font-weight: 900;
+    color: var(--accent-success);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.roi-arrow {
+    color: var(--accent-success);
+}
+
+.roi-scenarios {
+    display: flex;
+    gap: 16px;
+}
+
+.roi-scenario {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.rs-label {
+    font-size: 0.65rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+}
+
+.rs-value {
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+/* Metrics */
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 14px;
+}
+
+.metric-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.metric-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.metric-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.metric-change {
+    font-size: 0.72rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.metric-change.up {
+    color: var(--accent-success);
+}
+
+.metric-change.down {
+    color: var(--accent-danger);
+}
+
+.metric-value {
+    font-size: 1.2rem;
+    font-weight: 800;
+}
+
+.metric-label {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+}
+
+/* Charts */
+.charts-row {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+}
+
+.chart-card {
+    overflow: hidden;
+}
+
+.chart-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.chart-header h3 {
+    font-size: 0.9rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-primary);
+}
+
+.chart-body {
+    margin: 0 -12px;
+}
+
+.chart-tooltip {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-sm);
+    padding: 8px 12px;
+    font-size: 0.75rem;
+}
+
+.tooltip-label {
+    font-weight: 600;
+    margin-bottom: 4px;
+    color: var(--text-primary);
+}
+
+/* Suggestions */
+.suggestions-section {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.suggestions-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.suggestions-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.suggestion-item {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.suggestion-icon {
+    flex-shrink: 0;
+    color: var(--accent-warning);
+    margin-top: 2px;
+}
+
+.suggestion-item:first-child .suggestion-icon {
+    color: var(--accent-success);
+}
+
+/* Weak Metrics */
+.weak-metrics-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.weak-metric-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.wm-name {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    min-width: 110px;
+}
+
+.wm-bar-track {
+    flex: 1;
+    height: 6px;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-full);
+    overflow: hidden;
+}
+
+.wm-bar-fill {
+    height: 100%;
+    border-radius: var(--radius-full);
+    transition: width 1s ease;
+}
+
+.wm-value {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--accent-danger);
+    min-width: 50px;
+    text-align: right;
+}
+
+/* Saved Products */
+.saved-products-section {
+    margin-top: -8px;
+}
+
+.saved-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.saved-header .suggestions-title {
+    margin-bottom: 0;
+}
+
+.saved-products-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.saved-product-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 16px;
+    background: var(--bg-glass);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-md);
+    transition: all var(--transition-fast);
+    cursor: default;
+}
+
+.saved-product-row:hover {
+    background: var(--bg-glass-hover);
+    border-color: var(--border-hover);
+}
+
+.sp-grade-badge {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 0.95rem;
+    flex-shrink: 0;
+}
+
+.sp-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.sp-name {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sp-date {
+    font-size: 0.72rem;
+    color: var(--text-tertiary);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.sp-score {
+    display: flex;
+    align-items: baseline;
+    gap: 2px;
+    flex-shrink: 0;
+}
+
+.sp-score-value {
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+
+.sp-score-label {
+    font-size: 0.7rem;
+    color: var(--text-tertiary);
+    font-weight: 600;
+}
+
+.saved-empty,
+.saved-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 40px 20px;
+    color: var(--text-tertiary);
+    text-align: center;
+}
+
+.saved-empty p,
+.saved-loading p {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.saved-empty span {
+    font-size: 0.78rem;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.spin-icon {
+    animation: spin 1s linear infinite;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+    .metrics-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    .dash-top-row {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .metrics-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .dash-top-row {
+        grid-template-columns: 1fr;
+    }
+
+    .charts-row {
+        grid-template-columns: 1fr;
+    }
+
+    .suggestions-section {
+        grid-template-columns: 1fr;
+    }
+}
+===
+/* Dashboard Styles */
+
+.dashboard-page {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    position: relative;
+    z-index: 1;
+}
+
+/* Header */
+.dash-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.dash-header-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.dash-product-icon {
+    font-size: 2.5rem;
+    width: 56px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-glass);
+    border-radius: var(--radius-md);
+}
+
+.dash-product-name {
+    font-size: 1.4rem;
+    font-weight: 800;
+}
+
+.dash-product-meta {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.dash-header-actions {
+    display: flex;
+    gap: 8px;
+}
+
+/* Top Row */
+.dash-top-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+}
+
+/* Grade Card */
+.grade-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 8px;
+}
+
+.grade-label {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+}
+
+.grade-circle {
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    border: 4px solid var(--grade-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 30px color-mix(in srgb, var(--grade-color) 30%, transparent);
+    animation: pulse-glow 2.5s infinite;
+}
+
+.grade-letter {
+    font-size: 3rem;
+    font-weight: 900;
+    color: var(--grade-color);
+    line-height: 1;
+}
+
+.grade-score {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.grade-tag {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Risk Card */
+.risk-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 4px;
+}
+
+.risk-label {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+}
+
+.risk-gauge {
+    position: relative;
+    width: 120px;
+    height: 70px;
+}
+
+.risk-svg {
+    width: 100%;
+    height: 100%;
+}
+
+.risk-value {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 1.1rem;
+    font-weight: 800;
+}
+
+.risk-score {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+}
+
+/* Saturation */
+.saturation-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.sat-label {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+}
+
+.sat-value {
+    font-size: 2rem;
+    font-weight: 900;
+}
+
+.sat-status {
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+/* ROI */
+.roi-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.roi-label {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+}
+
+.roi-value {
+    font-size: 2rem;
+    font-weight: 900;
+    color: var(--accent-success);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.roi-arrow {
+    color: var(--accent-success);
+}
+
+.roi-scenarios {
+    display: flex;
+    gap: 16px;
+}
+
+.roi-scenario {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.rs-label {
+    font-size: 0.65rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+}
+
+.rs-value {
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+/* Metrics */
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 14px;
+}
+
+.metric-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.metric-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.metric-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.metric-change {
+    font-size: 0.72rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.metric-change.up {
+    color: var(--accent-success);
+}
+
+.metric-change.down {
+    color: var(--accent-danger);
+}
+
+.metric-value {
+    font-size: 1.2rem;
+    font-weight: 800;
+}
+
+.metric-label {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+}
+
+/* Charts */
+.charts-row {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+}
+
+.chart-card {
+    overflow: hidden;
+}
+
+.chart-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.chart-header h3 {
+    font-size: 0.9rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-primary);
+}
+
+.chart-body {
+    margin: 0 -12px;
+}
+
+.chart-tooltip {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-sm);
+    padding: 8px 12px;
+    font-size: 0.75rem;
+}
+
+.tooltip-label {
+    font-weight: 600;
+    margin-bottom: 4px;
+    color: var(--text-primary);
+}
+
+/* Suggestions */
+.suggestions-section {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.suggestions-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.suggestions-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.suggestion-item {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.suggestion-icon {
+    flex-shrink: 0;
+    color: var(--accent-warning);
+    margin-top: 2px;
+}
+
+.suggestion-item:first-child .suggestion-icon {
+    color: var(--accent-success);
+}
+
+/* Weak Metrics */
+.weak-metrics-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.weak-metric-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.wm-name {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    min-width: 110px;
+}
+
+.wm-bar-track {
+    flex: 1;
+    height: 6px;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-full);
+    overflow: hidden;
+}
+
+.wm-bar-fill {
+    height: 100%;
+    border-radius: var(--radius-full);
+    transition: width 1s ease;
+}
+
+.wm-value {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--accent-danger);
+    min-width: 50px;
+    text-align: right;
+}
+
+/* Saved Products */
+.saved-products-section {
+    margin-top: -8px;
+}
+
+.saved-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.saved-header .suggestions-title {
+    margin-bottom: 0;
+}
+
+.saved-products-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.saved-product-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 16px;
+    background: var(--bg-glass);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-md);
+    transition: all var(--transition-fast);
+    cursor: default;
+}
+
+.saved-product-row:hover {
+    background: var(--bg-glass-hover);
+    border-color: var(--border-hover);
+}
+
+.sp-grade-badge {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 0.95rem;
+    flex-shrink: 0;
+}
+
+.sp-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.sp-name {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.sp-version {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: var(--radius-full);
+    background: rgba(139, 92, 246, 0.15);
+    color: var(--accent-primary);
+    flex-shrink: 0;
+}
+
+.sp-date {
+    font-size: 0.72rem;
+    color: var(--text-tertiary);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.sp-score {
+    display: flex;
+    align-items: baseline;
+    gap: 2px;
+    flex-shrink: 0;
+}
+
+.sp-score-value {
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+
+.sp-score-label {
+    font-size: 0.7rem;
+    color: var(--text-tertiary);
+    font-weight: 600;
+}
+
+.saved-empty,
+.saved-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 40px 20px;
+    color: var(--text-tertiary);
+    text-align: center;
+}
+
+.saved-empty p,
+.saved-loading p {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.saved-empty span {
+    font-size: 0.78rem;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.spin-icon {
+    animation: spin 1s linear infinite;
+}
+
+/* Toast Notifications */
+.toast-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 10000;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(16px);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.toast-container.visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.toast {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 20px;
+    border-radius: var(--radius-md);
+    font-size: 0.85rem;
+    font-weight: 600;
+    backdrop-filter: blur(20px);
+    box-shadow: var(--shadow-lg);
+    min-width: 280px;
+    max-width: 420px;
+}
+
+.toast-success {
+    background: rgba(16, 185, 129, 0.15);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    color: #10b981;
+}
+
+.toast-error {
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #ef4444;
+}
+
+/* Disabled button */
+.btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none !important;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+    .metrics-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    .dash-top-row {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .metrics-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .dash-top-row {
+        grid-template-columns: 1fr;
+    }
+
+    .charts-row {
+        grid-template-columns: 1fr;
+    }
+
+    .suggestions-section {
+        grid-template-columns: 1fr;
+    }
+}
+```
+
+---
+
+## Browser Test
+
+![Phase 2 full test — search, compare, grade](C:/Users/dasar/.gemini/antigravity/brain/d204bb8b-7f75-43bd-941a-4f1ef08e9720/phase2_full_test_1771912996632.webp)
+
+| Feature | Status | Result |
+|---------|--------|--------|
+| Search "slippers" | ✅ | 6 dynamic products with realistic metrics |
+| Compare 2 products | ✅ | Floating bar → Compare page with metric bars |
+| Grade from Finder | ✅ | Dashboard shows full analysis |
+| Versioned re-grade | ✅ | Auto-increments version number |
+| Trending API | ✅ | Home page loads from `/api/products/trending` |
+| Sidebar Compare nav | ✅ | New nav item visible |
+
+## What's Remaining
+
+- **Google OAuth** — deferred, needs Cloud Console credentials

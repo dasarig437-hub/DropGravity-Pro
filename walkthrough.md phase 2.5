@@ -1,0 +1,68 @@
+# Hardening Sprint — Phase 2.5 Walkthrough
+
+All 4 pillars implemented and verified. **8 files modified, 0 new files.**
+
+---
+
+## Changes Made
+
+### 1️⃣ Header System
+
+| Feature | File | Status |
+|---|---|---|
+| `Ctrl+K` / `⌘K` focus shortcut | [Topbar.jsx](file:///c:/Users/dasar/DropGravity%20Pro/src/components/Topbar.jsx) | ✅ |
+| Empty search shake + tooltip | [Topbar.jsx](file:///c:/Users/dasar/DropGravity%20Pro/src/components/Topbar.jsx), [Topbar.css](file:///c:/Users/dasar/DropGravity%20Pro/src/components/Topbar.css) | ✅ |
+| `maxLength=200` on search input | [Topbar.jsx](file:///c:/Users/dasar/DropGravity%20Pro/src/components/Topbar.jsx) | ✅ |
+
+### 2️⃣ Product Engine Realism
+
+| Feature | File | Status |
+|---|---|---|
+| 22 naming templates with category adjectives | [productGenerator.js](file:///c:/Users/dasar/DropGravity%20Pro/server/engine/productGenerator.js) | ✅ |
+| Grade distribution via ±15 tierBoost + nudge | [productGenerator.js](file:///c:/Users/dasar/DropGravity%20Pro/server/engine/productGenerator.js) | ✅ |
+| Bell-shaped order counts (500–80K) | [productGenerator.js](file:///c:/Users/dasar/DropGravity%20Pro/server/engine/productGenerator.js) | ✅ |
+| Tighter shipping days (4–20) | [productGenerator.js](file:///c:/Users/dasar/DropGravity%20Pro/server/engine/productGenerator.js) | ✅ |
+| Price `.toFixed(2)` formatting | [Finder.jsx](file:///c:/Users/dasar/DropGravity%20Pro/src/pages/Finder.jsx) | ✅ |
+
+### 3️⃣ Version Group UX
+
+| Feature | File | Status |
+|---|---|---|
+| Score delta badge (↑/↓ with point diff) | [Dashboard.jsx](file:///c:/Users/dasar/DropGravity%20Pro/src/pages/Dashboard.jsx), [Dashboard.css](file:///c:/Users/dasar/DropGravity%20Pro/src/pages/Dashboard.css) | ✅ |
+
+### 4️⃣ Edge Case Hardening
+
+| Feature | File | Status |
+|---|---|---|
+| Finder: `maxLength=200`, empty validation, shake | [Finder.jsx](file:///c:/Users/dasar/DropGravity%20Pro/src/pages/Finder.jsx), [Finder.css](file:///c:/Users/dasar/DropGravity%20Pro/src/pages/Finder.css) | ✅ |
+| Finder: quick-query debounce guard | [Finder.jsx](file:///c:/Users/dasar/DropGravity%20Pro/src/pages/Finder.jsx) | ✅ |
+| Server: productName sanitization (trim, control chars, 500 cap) | [server/index.js](file:///c:/Users/dasar/DropGravity%20Pro/server/index.js) | ✅ |
+| Display safety: React JSX auto-escapes, no `dangerouslySetInnerHTML` | All components | ✅ |
+
+---
+
+## Verification Results
+
+All tests **PASSED** via live browser testing against `localhost:5173` + `localhost:5000`.
+
+### Screenshots
+
+````carousel
+![Ctrl+K shortcut focuses search, Dashboard showing graded product with B grade](C:\Users\dasar\.gemini\antigravity\brain\8a2b7d1d-ab55-46b7-8fa9-900e89a51f4c\dashboard_ctrlk.png)
+<!-- slide -->
+![Finder results showing varied names, 2-decimal prices ($27.46 → $45.63), Coming Soon badges](C:\Users\dasar\.gemini\antigravity\brain\8a2b7d1d-ab55-46b7-8fa9-900e89a51f4c\finder_results.png)
+<!-- slide -->
+![Quick query "Phone accessories" loaded correctly with product results](C:\Users\dasar\.gemini\antigravity\brain\8a2b7d1d-ab55-46b7-8fa9-900e89a51f4c\finder_quick_query.png)
+````
+
+### Browser Recording
+
+![Full verification flow: auth → header tests → product engine → edge cases](C:\Users\dasar\.gemini\antigravity\brain\8a2b7d1d-ab55-46b7-8fa9-900e89a51f4c\hardening_sprint_verification_1772007378058.webp)
+
+---
+
+## Key Design Decisions
+
+- **Grade tuning uses weighted `tierBoost`, NOT fixed probability branching** — preserves deterministic seed behavior. Same keyword always produces the same grades.
+- **Display safety over input mutation** — React JSX auto-escapes text, so user input stays intact. No `dangerouslySetInnerHTML` used anywhere.
+- **Secondary `rng()` nudge** adds ±0.04 smoothing to tier boundaries, preventing hard jumps between grade bands.

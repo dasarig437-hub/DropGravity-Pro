@@ -1,0 +1,311 @@
+/* Settings Page Styles */
+
+.settings-page {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    position: relative;
+    z-index: 1;
+}
+
+.settings-header {
+    margin-bottom: 4px;
+}
+
+.settings-title {
+    font-size: 1.5rem;
+    font-weight: 800;
+}
+
+.settings-subtitle {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+/* Layout */
+.settings-layout {
+    display: flex;
+    gap: 24px;
+}
+
+/* Nav */
+.settings-nav {
+    width: 220px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    height: fit-content;
+    position: sticky;
+    top: calc(var(--topbar-height) + 24px);
+}
+
+.settings-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: var(--radius-sm);
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    transition: all var(--transition-fast);
+    text-align: left;
+}
+
+.settings-nav-item:hover {
+    color: var(--text-primary);
+    background: var(--bg-glass-hover);
+}
+
+.settings-nav-item.active {
+    color: var(--accent-primary);
+    background: rgba(139, 92, 246, 0.1);
+}
+
+.nav-arrow {
+    margin-left: auto;
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+}
+
+.settings-nav-item:hover .nav-arrow,
+.settings-nav-item.active .nav-arrow {
+    opacity: 1;
+}
+
+/* Content */
+.settings-content {
+    flex: 1;
+}
+
+.settings-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.panel-title {
+    font-size: 1rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border-primary);
+    margin-bottom: 16px;
+}
+
+/* Setting Rows */
+.setting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--border-primary);
+}
+
+.setting-row:last-child {
+    border-bottom: none;
+}
+
+.setting-row.danger {
+    border-bottom: none;
+    padding-top: 20px;
+}
+
+.setting-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.setting-label {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.setting-desc {
+    font-size: 0.78rem;
+    color: var(--text-tertiary);
+}
+
+.setting-control {
+    width: 160px;
+}
+
+/* Slider */
+.slider-container {
+    width: 200px;
+}
+
+.slider-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.65rem;
+    color: var(--text-tertiary);
+    margin-top: 4px;
+}
+
+/* Plan Card */
+.plan-card {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.plan-current {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.plan-name {
+    font-size: 1.1rem;
+    font-weight: 800;
+}
+
+.plan-details p {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.plan-upgrade-options {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    margin-top: 8px;
+}
+
+.plan-option {
+    padding: 20px;
+    background: var(--bg-glass);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-md);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.plan-option.featured {
+    border-color: var(--accent-primary);
+    background: rgba(139, 92, 246, 0.06);
+}
+
+.po-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.po-header h4 {
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.po-price {
+    font-size: 1.3rem;
+    font-weight: 900;
+    color: var(--accent-primary);
+}
+
+.po-price small {
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: var(--text-tertiary);
+}
+
+.po-features {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.po-features li {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    padding-left: 16px;
+    position: relative;
+}
+
+.po-features li::before {
+    content: '✓';
+    position: absolute;
+    left: 0;
+    color: var(--accent-success);
+    font-size: 0.7rem;
+}
+
+/* API Key */
+.api-key-box {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px;
+    background: var(--bg-glass);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-md);
+}
+
+.api-key-display {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.api-key-display code {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.api-note {
+    font-size: 0.78rem;
+    color: var(--text-tertiary);
+    margin-top: 10px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .settings-layout {
+        flex-direction: column;
+    }
+
+    .settings-nav {
+        width: 100%;
+        position: static;
+        flex-direction: row;
+        overflow-x: auto;
+        gap: 4px;
+        padding: 8px;
+    }
+
+    .settings-nav-item {
+        white-space: nowrap;
+        padding: 8px 12px;
+        font-size: 0.8rem;
+    }
+
+    .nav-arrow {
+        display: none;
+    }
+
+    .plan-upgrade-options {
+        grid-template-columns: 1fr;
+    }
+
+    .setting-row {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .setting-control,
+    .slider-container {
+        width: 100%;
+    }
+}
