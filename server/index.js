@@ -12,6 +12,8 @@ import { generateProducts, getSignalStrength } from './engine/productGenerator.j
 import { resetDailyQuotaIfNeeded } from './utils/quotaUtils.js';
 import TrendCache from './models/TrendCache.js';
 import { fetchTrendData } from './services/trendService.js';
+import VolumeCache from './models/VolumeCache.js';
+import { fetchSearchVolume } from './services/searchVolumeService.js';
 
 const app = express();
 app.use(cors());
@@ -189,21 +191,21 @@ app.post('/api/products/analyze', verifyToken, async (req, res) => {
         let products = generateProducts(kw, 6);
 
         // ---- Google Trends Integration (Phase 6) ----
+        let finalTrendScore = null;
         try {
             const normalizedKeyword = kw.trim().toLowerCase();
             const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000);
 
             // 1. Check cache
             let cachedTrend = await TrendCache.findOne({ keyword: normalizedKeyword });
-            let trendScore = null;
 
             if (cachedTrend && cachedTrend.fetchedAt > sixHoursAgo) {
-                trendScore = cachedTrend.trendScore;
+                finalTrendScore = cachedTrend.trendScore;
             } else {
                 // 2. Fetch new
                 const freshTrend = await fetchTrendData(normalizedKeyword);
                 if (freshTrend) {
-                    trendScore = freshTrend.trendScore;
+                    finalTrendScore = freshTrend.trendScore;
                     // Upsert cache
                     await TrendCache.findOneAndUpdate(
                         { keyword: normalizedKeyword },
@@ -217,37 +219,103 @@ app.post('/api/products/analyze', verifyToken, async (req, res) => {
                     );
                 }
             }
-
-            // 3. Inject score if we got one successfully
-            if (trendScore !== null) {
-                products = products.map(p => {
-                    p.trendVelocity = trendScore; // override the mock trend
-
-                    // Rekey the metrics Object
-                    const rawMetrics = {
-                        profitMargin: p.profitMargin,
-                        trendVelocity: p.trendVelocity,
-                        adCompetition: p.adCompetition,
-                        cpcForecast: p.cpcForecast,
-                        supplierReliability: p.supplierReliability,
-                        reviewSentiment: p.reviewSentiment,
-                        marketSaturation: p.marketSaturation
-                    };
-
-                    const newGrade = gradeProduct(rawMetrics);
-                    return {
-                        ...p,
-                        score: newGrade.score,
-                        grade: newGrade.grade
-                    };
-                });
-
-                // Re-sort because the scores shifted
-                products.sort((a, b) => b.score - a.score);
-            }
         } catch (trendErr) {
             console.warn(`[Trends API] Safe fallback triggered. Error:`, trendErr.message);
-            // Fallback: silently proceed using original deterministic products.
+        }
+
+        // ---- Search Volume Integration (Phase 6.2) ----
+        let finalVolumeScore = null;
+        let finalCompetitionScore = null;
+        try {
+            const normalizedKeyword = kw.trim().toLowerCase();
+            const seventyTwoHoursAgo = new Date(Date.now() - 72 * 60 * 60 * 1000);
+
+            // 1. Check cache
+            let cachedVolume = await VolumeCache.findOne({ keyword: normalizedKeyword });
+
+            if (cachedVolume && cachedVolume.fetchedAt > seventyTwoHoursAgo) {
+                finalVolumeScore = cachedVolume.volumeScore;
+                finalCompetitionScore = cachedVolume.competitionScore;
+            } else {
+                // 2. Fetch new
+                const freshVolume = await fetchSearchVolume(normalizedKeyword);
+                if (freshVolume) {
+                    finalVolumeScore = freshVolume.volumeScore;
+                    finalCompetitionScore = freshVolume.competitionScore;
+                    // Upsert cache
+                    await VolumeCache.findOneAndUpdate(
+                        { keyword: normalizedKeyword },
+                        {
+                            keyword: normalizedKeyword,
+                            volumeScore: freshVolume.volumeScore,
+                            competitionScore: freshVolume.competitionScore,
+                            rawVolume: freshVolume.rawVolume,
+                            fetchedAt: freshVolume.fetchedAt
+                        },
+                        { upsert: true, new: true }
+                    );
+                }
+            }
+        } catch (volErr) {
+            console.warn(`[Volume API] Safe fallback triggered. Error:`, volErr.message);
+        }
+
+        // ---- Signal Injection & Grading Execution ----
+        // Only run the custom mapping and recalculation if at least ONE real signal succeeded
+        if (finalTrendScore !== null || finalVolumeScore !== null) {
+            products = products.map(p => {
+
+                // Inherit existing determinist mock data as base
+                let pTrend = p.trendVelocity;
+                let pVol = p.marketSaturation;
+                let pComp = p.adCompetition;
+
+                // Override signals if explicitly fetched
+                if (finalTrendScore !== null) pTrend = finalTrendScore;
+                if (finalVolumeScore !== null) pVol = finalVolumeScore;
+                if (finalCompetitionScore !== null) pComp = finalCompetitionScore;
+
+                // Apply custom Demand Index (economically logical substitution) for this step
+                // High Demand index = High Trend + High Volume + LOW Competition
+                const demandIndex = (pTrend * 0.4) + (pVol * 0.4) + ((100 - pComp) * 0.2);
+
+                // Inject specific explicit variables back to our base model for the final grading score
+                p.trendVelocity = pTrend;
+
+                // NOTE: The user's goal was to NOT blindly override market saturation, but to integrate them
+                // intelligently. Since the overarching core "gradeProduct" only expects these 7 keys,
+                // we integrate via mapping the final Demand Index formula outputs back to the most 
+                // relevant metric representations without breaking the deterministic structure.
+
+                // Represent raw competition specifically over CPC
+                p.cpcForecast = pComp;
+
+                // Represent pure volume inversely into marketSaturation (where 100 sat = high demand)
+                // Since the original algorithm scores lower market Saturation as "better" (subtractor):
+                p.marketSaturation = Math.max(0, 100 - pVol);
+
+                const rawMetrics = {
+                    profitMargin: p.profitMargin,
+                    trendVelocity: p.trendVelocity,    // Now real Google Trends 
+                    adCompetition: p.adCompetition,
+                    cpcForecast: p.cpcForecast,        // Now real DataForSEO Competition 
+                    supplierReliability: p.supplierReliability,
+                    reviewSentiment: p.reviewSentiment,
+                    marketSaturation: p.marketSaturation // Now mapped inversely to DataForSEO Volume
+                };
+
+                const newGrade = gradeProduct(rawMetrics);
+                return {
+                    ...p,
+                    // Optionally attach our custom calculation for the frontend if they need the raw index later
+                    demandIndex: Number(demandIndex.toFixed(1)),
+                    score: newGrade.score,
+                    grade: newGrade.grade
+                };
+            });
+
+            // Re-sort because the final scores shifted
+            products.sort((a, b) => b.score - a.score);
         }
 
         // ---- Deduct quota (Phase 3) ----

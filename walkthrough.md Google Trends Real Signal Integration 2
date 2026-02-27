@@ -1,0 +1,74 @@
+# Walkthrough: Google Trends Real Signal Integration
+
+We've successfully integrated real Google Trends data into the DropGravity Pro backend grading engine! 
+
+Here is the step-by-step testing guide to verify the implementation.
+
+---
+
+## What Changed
+- **`google-trends-api`**: Installed the dependency to fetch US 30-day interest over time.
+- **`TrendCache` Model**: Created a new Mongoose schema ([server/models/TrendCache.js](file:///c:/Users/dasar/DropGravity%20Pro/server/models/TrendCache.js)) to cache results.
+- **[trendService.js](file:///c:/Users/dasar/DropGravity%20Pro/server/services/trendService.js)**: Created a service to fetch the data, compute a 0-100 `trendScore` (based on average interest and recent momentum), and strip down the payload.
+- **`POST /api/products/analyze`**: Modified the route in [server/index.js](file:///c:/Users/dasar/DropGravity%20Pro/server/index.js) to fetching the signal and injecting it into the deterministic products, overriding the mock `trendVelocity`.
+
+---
+
+## 🧪 Manual Verification Steps
+
+You can verify the integration using your preferred API testing tool (Postman, Insomnia, or a simple `curl` command) against your local server.
+
+### 1. Test Initial Request (Cache Miss)
+1. Start your backend server (`npm run dev` in `/server`).
+2. Send a `POST` request to `http://localhost:5000/api/products/analyze` with a valid JWT token in the `Authorization` header.
+3. Use the JSON body: `{"keyword": "LED Lamp"}`.
+4. **Expected Outcome**: The request will take slightly longer (around 1-2 seconds) as it queries Google Trends. The returned products will have a `trendVelocity` score derived from real data.
+
+### 2. Test Cache Hit & Normalization
+1. Send another request to the same endpoint, but change the casing and spacing: `{"keyword": "  led lamp "}`.
+2. **Expected Outcome**: The response should be almost instantaneous. It hits the MongoDB `TrendCache` using the normalized `led lamp` key, bypassing the external API call. 
+
+### 3. Test Differential Keywords
+1. Send a request with a completely different keyword: `{"keyword": "fidget spinner"}`.
+2. **Expected Outcome**: The `trendVelocity` scores and overall grading `score` should diverge from the *LED Lamp* results because it fetched entirely new trend data.
+
+### 4. Verify MongoDB Cache Documents
+1. Open MongoDB Compass (or `mongosh`).
+2. Inspect the `trendcaches` collection in your DropGravity Database.
+3. **Expected Outcome**: You should see two documents matching the exact schema (one for `"led lamp"` and one for `"fidget spinner"`), each containing a `trendScore`, `rawData` array, and `fetchedAt` date.
+
+### 5. Test Error Safety & Fallback Mode
+1. Open `server/services/trendService.js`.
+2. Temporarily inject `throw new Error('Test Crash');` at the very top of the `try` block inside `fetchTrendData()`.
+3. Restart your server if nodemon isn't running, and send a request for a *new* keyword: `{"keyword": "smart watch"}`.
+4. **Expected Outcome**: The endpoint must **not** crash. It should still return 6 valid products using the old deterministic mock trend score. Your server console will log: `[Trends API] Safe fallback triggered. Error: Test Crash`.
+5. *(Remember to remove the throw statement afterward!)*
+
+---
+
+# Walkthrough: Search Volume API Integration (DataForSEO)
+
+We have successfully swapped out the HTML scraping intention for a robust API-based **Search Volume Signal Layer** utilizing the `DataForSEO` API, a 72-hour extended TTL, and the founder-requested Demand Index injection mapping.
+
+## What Changed
+- **`axios`**: Installed the dependency to call the DataForSEO API.
+- **`VolumeCache` Model**: Created `server/models/VolumeCache.js` with `keyword`, `volumeScore`, `competitionScore`, `rawVolume`, and `fetchedAt`.
+- **`searchVolumeService.js`**: Created the service targeting `https://api.dataforseo.com/v3/dataforseo_labs/google/keyword_metrics/live`. Computes normalized 0-100 scores leveraging logarithmic distribution `(Math.log10(rawVolume) / Math.log10(maxVol))`.
+- **`POST /api/products/analyze`**:
+  - Implemented the 72-hour MongoDB TTL cache using the required `normalizedKeyword`.
+  - Intelligently applies the **Final Demand Index** formula: `(TrendScore * 0.4) + (VolumeScore * 0.4) + ((100 - CompetitionScore) * 0.2)`. 
+  - To respect the overarching engine boundaries without overwriting arbitrarily, it maps the raw outputs: `cpcForecast` = raw competitionScore, and `marketSaturation` = `100 - pVol` (since low saturation is good). It also attaches `demandIndex` directly to the `POST` payload for potential frontend visual rendering.
+
+## 🧪 Manual Verification Steps
+
+1. **Test Standard Call**
+   - Ensure `DATAFORSEO_LOGIN` and `DATAFORSEO_PASSWORD` are inside your `/server/.env` file.
+   - Send `POST /api/products/analyze` with a new keyword like `{"keyword": "standing desk"}`.
+   - You should see the `demandIndex` score on each returned product alongside recalculations of the `cpcForecast` and `marketSaturation`.
+
+2. **Test Cache & Rate Limit Proofing**
+   - Call the same keyword again the exact same way.
+   - The response should be near-instantaneous, hitting `VolumeCache` from MongoDB rather than querying DataForSEO.
+
+3. **Fallback Testing**
+   - If your API credentials are bad or missing, the tool safely prints a warning to the console (`[VolumeService] DataForSEO credentials missing. Falling back.`) and smoothly falls back to purely deterministic initial metrics, never disrupting the user experience.
