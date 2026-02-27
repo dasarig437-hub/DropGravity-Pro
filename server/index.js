@@ -10,6 +10,8 @@ import User from './models/User.js';
 import { gradeProduct } from './engine/gradingEngine.js';
 import { generateProducts, getSignalStrength } from './engine/productGenerator.js';
 import { resetDailyQuotaIfNeeded } from './utils/quotaUtils.js';
+import TrendCache from './models/TrendCache.js';
+import { fetchTrendData } from './services/trendService.js';
 
 const app = express();
 app.use(cors());
@@ -184,7 +186,69 @@ app.post('/api/products/analyze', verifyToken, async (req, res) => {
 
         // ---- Generate products (deterministic engine unchanged) ----
         const signal = getSignalStrength(kw);
-        const products = generateProducts(kw, 6);
+        let products = generateProducts(kw, 6);
+
+        // ---- Google Trends Integration (Phase 6) ----
+        try {
+            const normalizedKeyword = kw.trim().toLowerCase();
+            const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000);
+
+            // 1. Check cache
+            let cachedTrend = await TrendCache.findOne({ keyword: normalizedKeyword });
+            let trendScore = null;
+
+            if (cachedTrend && cachedTrend.fetchedAt > sixHoursAgo) {
+                trendScore = cachedTrend.trendScore;
+            } else {
+                // 2. Fetch new
+                const freshTrend = await fetchTrendData(normalizedKeyword);
+                if (freshTrend) {
+                    trendScore = freshTrend.trendScore;
+                    // Upsert cache
+                    await TrendCache.findOneAndUpdate(
+                        { keyword: normalizedKeyword },
+                        {
+                            keyword: normalizedKeyword,
+                            trendScore: freshTrend.trendScore,
+                            rawData: freshTrend.rawData,
+                            fetchedAt: freshTrend.fetchedAt
+                        },
+                        { upsert: true, new: true }
+                    );
+                }
+            }
+
+            // 3. Inject score if we got one successfully
+            if (trendScore !== null) {
+                products = products.map(p => {
+                    p.trendVelocity = trendScore; // override the mock trend
+
+                    // Rekey the metrics Object
+                    const rawMetrics = {
+                        profitMargin: p.profitMargin,
+                        trendVelocity: p.trendVelocity,
+                        adCompetition: p.adCompetition,
+                        cpcForecast: p.cpcForecast,
+                        supplierReliability: p.supplierReliability,
+                        reviewSentiment: p.reviewSentiment,
+                        marketSaturation: p.marketSaturation
+                    };
+
+                    const newGrade = gradeProduct(rawMetrics);
+                    return {
+                        ...p,
+                        score: newGrade.score,
+                        grade: newGrade.grade
+                    };
+                });
+
+                // Re-sort because the scores shifted
+                products.sort((a, b) => b.score - a.score);
+            }
+        } catch (trendErr) {
+            console.warn(`[Trends API] Safe fallback triggered. Error:`, trendErr.message);
+            // Fallback: silently proceed using original deterministic products.
+        }
 
         // ---- Deduct quota (Phase 3) ----
         if (user.plan !== 'pro') {
