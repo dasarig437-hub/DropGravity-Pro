@@ -1,0 +1,32 @@
+# Phase 4.5 Walkthrough (Storage Limits & UX Correction)
+
+I have successfully replaced the dashboard's auto-save functionality with a deliberate, manual "Save Product" button. Additionally, I confirmed that your backend codebase strictly fulfills and properly handles the varying Free versus Pro product storage quotas.
+
+## 🛠️ Changes Made
+
+### Frontend Dashboard Constraints
+*   **Disabled Auto-Save Function:** Removed the React hook (`useEffect`) that automatically executed an API save state trigger whenever visiting the dashboard with an incoming product.
+*   **Manual "Save Product" Controls:** Engineered a fresh action button at the top right header space (beside "Re-Grade").
+*   **Dynamic Save Status Assessment:** The UI intrinsically checks the existing saved products array against the active product to compute an intuitive `isSaved` boolean. The explicit "Save Product" component transforms natively into an incapacitated "Saved" flag showing a reassuring checkmark if already tracked.
+*   **Cleanliness Enforced:** Ensured the dashboard inherently constraints visual rendering to strictly the top 5 most recent product groups via the established component filtering logic inside the UI.
+
+### Backend Quota Implementation Check
+*   Confirmed that `POST /api/grade` holds rigorous quota compliance logic inside [server/index.js](file:///c:/Users/dasar/DropGravity%20Pro/server/index.js).
+*   Correctly calculates the limit using `user.plan === 'pro' ? 20 : 5`.
+*   Aggregates products to securely delete previous iterations of the *oldest* saved entities precisely traversing threshold boundaries. 
+
+## 🧪 Verification Plan Instructions
+
+### Confirm Frontend Dashboard Behavior
+1. Log in to a DropGravity account.
+2. Formulate a search query in the **Finder** to return grades.
+3. Click to transition any graded element to your **Dashboard**. Note that the success alert does not immediately fire. 
+4. Spot the **Save Product** icon overhead. 
+5. Depress this button—verify subsequent loading states conclude elegantly showing "Saved", updating the underlying list inherently showing it alongside "Your Saved Products".
+
+### Evaluate Free vs Pro Caps
+1. **Free Environment Testing:** Ensure your active user operates the 'Free' tier. Individually prospect and securely save exactly *6 unique items*. Verifying your MongoDB database manually displays that the 1st distinct chronologically inserted element gets automatically discarded preserving precisely 5 rows.
+2. **Pro Setup Test:** Set your active user plan uniformly to 'Pro'. Prospect and firmly save *21 distinct outputs*. Database validation will reflect an analogous removal preserving no more than the last 20 objects. 
+
+> [!NOTE]  
+> The dashboard UI intrinsically visualizes only the last 5 elements per the strict Phase 4.5 guidelines, hence backend deletion execution can only reliably be witnessed functionally testing and validating directly against database queries or API fetches rather than exclusively UI presentation for Professional tiers.

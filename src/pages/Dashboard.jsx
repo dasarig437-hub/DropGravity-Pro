@@ -35,7 +35,6 @@ const CustomTooltip = ({ active, payload, label }) => {
 export default function Dashboard() {
     const { isAuthenticated } = useAuth();
     const location = useLocation();
-    const hasSaved = useRef(false);
 
     // Get product from navigation state, fallback to dailyAGrade
     const incomingProduct = location.state?.product;
@@ -86,37 +85,32 @@ export default function Dashboard() {
         loadSavedProducts();
     }, [loadSavedProducts]);
 
-    // Grade product via backend API (once per navigation)
-    useEffect(() => {
-        if (!isAuthenticated || !incomingProduct || hasSaved.current) return;
+    // Computed state to check if the current product is already saved
+    const isSaved = savedProducts.some(p => p.productName === product.name);
 
-        const saveToBackend = async () => {
-            hasSaved.current = true;
-            setGrading(true);
-            try {
-                await gradeProductAPI({
-                    productName: incomingProduct.name,
-                    profitMargin: incomingProduct.profitMargin,
-                    trendVelocity: incomingProduct.trendVelocity,
-                    adCompetition: incomingProduct.adCompetition,
-                    cpcForecast: incomingProduct.cpcForecast,
-                    supplierReliability: incomingProduct.supplierReliability,
-                    reviewSentiment: incomingProduct.reviewSentiment,
-                    marketSaturation: incomingProduct.marketSaturation,
-                });
-                // Refresh saved products after successful grade
-                await loadSavedProducts();
-                showToast(`${incomingProduct.name} graded & saved successfully!`, 'success');
-            } catch (err) {
-                console.error('Failed to grade product:', err);
-                showToast('Failed to grade product. Please try again.', 'error');
-            } finally {
-                setGrading(false);
-            }
-        };
-
-        saveToBackend();
-    }, [isAuthenticated, incomingProduct, loadSavedProducts]);
+    const handleSaveProduct = async () => {
+        if (!isAuthenticated || grading || regrading) return;
+        setGrading(true);
+        try {
+            await gradeProductAPI({
+                productName: product.name,
+                profitMargin: product.profitMargin,
+                trendVelocity: product.trendVelocity,
+                adCompetition: product.adCompetition,
+                cpcForecast: product.cpcForecast,
+                supplierReliability: product.supplierReliability,
+                reviewSentiment: product.reviewSentiment,
+                marketSaturation: product.marketSaturation,
+            });
+            await loadSavedProducts();
+            showToast(`${product.name} saved successfully!`, 'success');
+        } catch (err) {
+            console.error('Failed to save product:', err);
+            showToast('Failed to save product. Please try again.', 'error');
+        } finally {
+            setGrading(false);
+        }
+    };
 
     const analysis = gradeProduct({
         profitMargin: product.profitMargin,
@@ -186,6 +180,16 @@ export default function Dashboard() {
                     </div>
                 </div>
                 <div className="dash-header-actions">
+                    {isAuthenticated && (
+                        <button
+                            className={`btn ${isSaved ? 'btn-secondary' : 'btn-primary'} btn-sm`}
+                            onClick={handleSaveProduct}
+                            disabled={grading || regrading || isSaved}
+                        >
+                            {grading ? <Loader2 size={14} className="spin-icon" /> : isSaved ? <CheckCircle size={14} /> : <Package size={14} />}
+                            {grading ? 'Saving...' : isSaved ? 'Saved' : 'Save Product'}
+                        </button>
+                    )}
                     <button className="btn btn-secondary btn-sm" onClick={handleReGrade} disabled={regrading}>
                         {regrading ? <Loader2 size={14} className="spin-icon" /> : <RefreshCw size={14} />}
                         {regrading ? 'Re-Grading...' : 'Re-Grade'}
