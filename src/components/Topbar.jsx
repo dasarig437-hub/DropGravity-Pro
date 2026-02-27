@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, Search, User, Menu, LogOut, Loader2, Settings, CreditCard, ChevronDown } from 'lucide-react';
+import { Bell, Search, User, Menu, LogOut, Loader2, Settings, CreditCard, ChevronDown, Zap } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { createCheckoutSession } from '../services/api';
 import './Topbar.css';
 
 // Mock notifications
@@ -21,6 +22,8 @@ export default function Topbar({ collapsed, onMobileToggle }) {
     const [searchTooltip, setSearchTooltip] = useState('');
     const [showNotifications, setShowNotifications] = useState(false);
     const [showProfileMenu, setShowProfileMenu] = useState(false);
+    const [upgrading, setUpgrading] = useState(false);
+
     const searchDebounceRef = useRef(false);
     const searchInputRef = useRef(null);
     const notifRef = useRef(null);
@@ -77,6 +80,21 @@ export default function Topbar({ collapsed, onMobileToggle }) {
         }, 300);
     };
 
+    const handleUpgrade = async () => {
+        setUpgrading(true);
+        try {
+            const data = await createCheckoutSession();
+            if (data.url) {
+                window.location.href = data.url;
+            }
+        } catch (err) {
+            console.error('Upgrade redirect failed:', err);
+            alert('Could not start checkout. Please try again later.');
+        } finally {
+            setUpgrading(false);
+        }
+    };
+
     const unreadCount = mockNotifications.filter(n => n.unread).length;
 
     return (
@@ -106,6 +124,20 @@ export default function Topbar({ collapsed, onMobileToggle }) {
             </div>
 
             <div className="topbar-right">
+
+                {/* Upgrade Button */}
+                {isAuthenticated && user?.plan !== 'pro' && (
+                    <button
+                        className="btn btn-primary btn-sm"
+                        onClick={handleUpgrade}
+                        disabled={upgrading}
+                        style={{ marginRight: '1rem' }}
+                    >
+                        {upgrading ? <Loader2 size={14} className="spin-icon" /> : <Zap size={14} />}
+                        Upgrade to Pro
+                    </button>
+                )}
+
                 {/* Notification Bell */}
                 <div className="topbar-dropdown-wrapper" ref={notifRef}>
                     <button

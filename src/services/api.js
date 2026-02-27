@@ -136,3 +136,15 @@ export async function fetchTrendingProducts() {
     return res.json();
 }
 
+export async function createCheckoutSession() {
+    const res = await authFetch('/api/payment/create-checkout-session', {
+        method: 'POST',
+    });
+    const data = await res.json();
+    if (!res.ok) {
+        throw new Error(data.error || 'Failed to create checkout session');
+    }
+    return data;
+}
+
+

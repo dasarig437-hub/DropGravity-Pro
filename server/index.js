@@ -12,8 +12,9 @@ import { generateProducts, getSignalStrength } from './engine/productGenerator.j
 import { resetDailyQuotaIfNeeded } from './utils/quotaUtils.js';
 import TrendCache from './models/TrendCache.js';
 import { fetchTrendData } from './services/trendService.js';
-import VolumeCache from './models/VolumeCache.js';
-import { fetchSearchVolume } from './services/searchVolumeService.js';
+import Stripe from 'stripe';
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
 app.use(cors());
@@ -191,21 +192,21 @@ app.post('/api/products/analyze', verifyToken, async (req, res) => {
         let products = generateProducts(kw, 6);
 
         // ---- Google Trends Integration (Phase 6) ----
-        let finalTrendScore = null;
         try {
             const normalizedKeyword = kw.trim().toLowerCase();
             const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000);
 
             // 1. Check cache
             let cachedTrend = await TrendCache.findOne({ keyword: normalizedKeyword });
+            let trendScore = null;
 
             if (cachedTrend && cachedTrend.fetchedAt > sixHoursAgo) {
-                finalTrendScore = cachedTrend.trendScore;
+                trendScore = cachedTrend.trendScore;
             } else {
                 // 2. Fetch new
                 const freshTrend = await fetchTrendData(normalizedKeyword);
                 if (freshTrend) {
-                    finalTrendScore = freshTrend.trendScore;
+                    trendScore = freshTrend.trendScore;
                     // Upsert cache
                     await TrendCache.findOneAndUpdate(
                         { keyword: normalizedKeyword },
@@ -219,103 +220,37 @@ app.post('/api/products/analyze', verifyToken, async (req, res) => {
                     );
                 }
             }
+
+            // 3. Inject score if we got one successfully
+            if (trendScore !== null) {
+                products = products.map(p => {
+                    p.trendVelocity = trendScore; // override the mock trend
+
+                    // Rekey the metrics Object
+                    const rawMetrics = {
+                        profitMargin: p.profitMargin,
+                        trendVelocity: p.trendVelocity,
+                        adCompetition: p.adCompetition,
+                        cpcForecast: p.cpcForecast,
+                        supplierReliability: p.supplierReliability,
+                        reviewSentiment: p.reviewSentiment,
+                        marketSaturation: p.marketSaturation
+                    };
+
+                    const newGrade = gradeProduct(rawMetrics);
+                    return {
+                        ...p,
+                        score: newGrade.score,
+                        grade: newGrade.grade
+                    };
+                });
+
+                // Re-sort because the scores shifted
+                products.sort((a, b) => b.score - a.score);
+            }
         } catch (trendErr) {
             console.warn(`[Trends API] Safe fallback triggered. Error:`, trendErr.message);
-        }
-
-        // ---- Search Volume Integration (Phase 6.2) ----
-        let finalVolumeScore = null;
-        let finalCompetitionScore = null;
-        try {
-            const normalizedKeyword = kw.trim().toLowerCase();
-            const seventyTwoHoursAgo = new Date(Date.now() - 72 * 60 * 60 * 1000);
-
-            // 1. Check cache
-            let cachedVolume = await VolumeCache.findOne({ keyword: normalizedKeyword });
-
-            if (cachedVolume && cachedVolume.fetchedAt > seventyTwoHoursAgo) {
-                finalVolumeScore = cachedVolume.volumeScore;
-                finalCompetitionScore = cachedVolume.competitionScore;
-            } else {
-                // 2. Fetch new
-                const freshVolume = await fetchSearchVolume(normalizedKeyword);
-                if (freshVolume) {
-                    finalVolumeScore = freshVolume.volumeScore;
-                    finalCompetitionScore = freshVolume.competitionScore;
-                    // Upsert cache
-                    await VolumeCache.findOneAndUpdate(
-                        { keyword: normalizedKeyword },
-                        {
-                            keyword: normalizedKeyword,
-                            volumeScore: freshVolume.volumeScore,
-                            competitionScore: freshVolume.competitionScore,
-                            rawVolume: freshVolume.rawVolume,
-                            fetchedAt: freshVolume.fetchedAt
-                        },
-                        { upsert: true, new: true }
-                    );
-                }
-            }
-        } catch (volErr) {
-            console.warn(`[Volume API] Safe fallback triggered. Error:`, volErr.message);
-        }
-
-        // ---- Signal Injection & Grading Execution ----
-        // Only run the custom mapping and recalculation if at least ONE real signal succeeded
-        if (finalTrendScore !== null || finalVolumeScore !== null) {
-            products = products.map(p => {
-
-                // Inherit existing determinist mock data as base
-                let pTrend = p.trendVelocity;
-                let pVol = p.marketSaturation;
-                let pComp = p.adCompetition;
-
-                // Override signals if explicitly fetched
-                if (finalTrendScore !== null) pTrend = finalTrendScore;
-                if (finalVolumeScore !== null) pVol = finalVolumeScore;
-                if (finalCompetitionScore !== null) pComp = finalCompetitionScore;
-
-                // Apply custom Demand Index (economically logical substitution) for this step
-                // High Demand index = High Trend + High Volume + LOW Competition
-                const demandIndex = (pTrend * 0.4) + (pVol * 0.4) + ((100 - pComp) * 0.2);
-
-                // Inject specific explicit variables back to our base model for the final grading score
-                p.trendVelocity = pTrend;
-
-                // NOTE: The user's goal was to NOT blindly override market saturation, but to integrate them
-                // intelligently. Since the overarching core "gradeProduct" only expects these 7 keys,
-                // we integrate via mapping the final Demand Index formula outputs back to the most 
-                // relevant metric representations without breaking the deterministic structure.
-
-                // Represent raw competition specifically over CPC
-                p.cpcForecast = pComp;
-
-                // Represent pure volume inversely into marketSaturation (where 100 sat = high demand)
-                // Since the original algorithm scores lower market Saturation as "better" (subtractor):
-                p.marketSaturation = Math.max(0, 100 - pVol);
-
-                const rawMetrics = {
-                    profitMargin: p.profitMargin,
-                    trendVelocity: p.trendVelocity,    // Now real Google Trends 
-                    adCompetition: p.adCompetition,
-                    cpcForecast: p.cpcForecast,        // Now real DataForSEO Competition 
-                    supplierReliability: p.supplierReliability,
-                    reviewSentiment: p.reviewSentiment,
-                    marketSaturation: p.marketSaturation // Now mapped inversely to DataForSEO Volume
-                };
-
-                const newGrade = gradeProduct(rawMetrics);
-                return {
-                    ...p,
-                    // Optionally attach our custom calculation for the frontend if they need the raw index later
-                    demandIndex: Number(demandIndex.toFixed(1)),
-                    score: newGrade.score,
-                    grade: newGrade.grade
-                };
-            });
-
-            // Re-sort because the final scores shifted
-            products.sort((a, b) => b.score - a.score);
+            // Fallback: silently proceed using original deterministic products.
         }
 
         // ---- Deduct quota (Phase 3) ----
@@ -463,6 +398,88 @@ app.post('/api/ad-complete', verifyToken, async (req, res) => {
         return res.status(500).json({ error: 'Failed to process ad completion.' });
     }
 });
+
+// ---- Stripe Payment Routes (Phase 7) ----
+app.post('/api/payment/create-checkout-session', verifyToken, async (req, res) => {
+    try {
+        const user = await User.findById(req.userId);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+        if (user.plan === 'pro') return res.status(400).json({ error: 'Already subscribed to Pro' });
+
+        const session = await stripe.checkout.sessions.create({
+            payment_method_types: ['card'],
+            mode: 'subscription',
+            customer_email: user.email,
+            client_reference_id: user._id.toString(),
+            line_items: [
+                {
+                    price: process.env.STRIPE_PRICE_ID, // Ensure this is set in .env
+                    quantity: 1,
+                },
+            ],
+            success_url: `${process.env.CLIENT_URL || 'http://localhost:5173'}/dashboard?upgrade=success`,
+            cancel_url: `${process.env.CLIENT_URL || 'http://localhost:5173'}/dashboard?upgrade=cancelled`,
+        });
+
+        res.json({ url: session.url });
+    } catch (err) {
+        console.error('Checkout session error:', err);
+        res.status(500).json({ error: 'Failed to create checkout session' });
+    }
+});
+
+// Webhook requires raw body parsing to verify Stripe signature
+app.post(
+    '/api/payment/webhook',
+    express.raw({ type: 'application/json' }),
+    async (req, res) => {
+        const sig = req.headers['stripe-signature'];
+        const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+        let event;
+        try {
+            event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
+        } catch (err) {
+            console.error(`Webhook signature verification failed:`, err.message);
+            return res.status(400).send(`Webhook Error: ${err.message}`);
+        }
+
+        if (event.type === 'checkout.session.completed') {
+            const session = event.data.object;
+            const userId = session.client_reference_id;
+            const customerId = session.customer;
+            const subscriptionId = session.subscription;
+
+            if (userId) {
+                try {
+                    await User.findByIdAndUpdate(userId, {
+                        plan: 'pro',
+                        stripeCustomerId: customerId,
+                        stripeSubscriptionId: subscriptionId
+                    });
+                    console.log(`✅ User ${userId} upgraded to PRO via Stripe!`);
+                } catch (err) {
+                    console.error('Failed to update user plan on webhook:', err);
+                }
+            }
+        } else if (event.type === 'customer.subscription.deleted') {
+            const subscription = event.data.object;
+            const customerId = subscription.customer;
+
+            try {
+                await User.findOneAndUpdate(
+                    { stripeCustomerId: customerId },
+                    { plan: 'free' } // Downgrade gracefully
+                );
+                console.log(`ℹ️ Subscription ended. User downgraded to free.`);
+            } catch (err) {
+                console.error('Failed to downgrade user on webhook:', err);
+            }
+        }
+
+        res.status(200).end();
+    }
+);
 
 // ---- Start Server ----
 const PORT = process.env.PORT || 5000;

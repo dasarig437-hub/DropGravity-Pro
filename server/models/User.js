@@ -40,6 +40,16 @@ const userSchema = new mongoose.Schema({
         type: String,
         default: null,
     },
+
+    // ---- Stripe Subscription (Phase 7) ----
+    stripeCustomerId: {
+        type: String,
+        default: null
+    },
+    stripeSubscriptionId: {
+        type: String,
+        default: null
+    }
 });
 
 // Never return passwordHash in JSON responses
