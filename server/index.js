@@ -245,6 +245,32 @@ app.post('/api/grade', verifyToken, async (req, res) => {
 
         await product.save();
 
+        // ---- Enforce Storage Limits (Phase 4.5) ----
+        const user = await User.findById(req.userId);
+        if (user) {
+            const limit = user.plan === 'pro' ? 20 : 5;
+
+            // Group all by productName to find the top newest unique products
+            // An aggregate pipeline is most efficient here to get unique names sorted by max createdAt
+            const uniqueProducts = await Product.aggregate([
+                { $match: { userId: new mongoose.Types.ObjectId(req.userId) } },
+                { $group: { _id: "$productName", latestSaved: { $max: "$createdAt" } } },
+                { $sort: { latestSaved: -1 } }
+            ]);
+
+            // If we have more unique products than allowed
+            if (uniqueProducts.length > limit) {
+                // Get the names of the products that are older than the limit
+                const productsToDelete = uniqueProducts.slice(limit).map(p => p._id);
+
+                // Delete all versions of those oldest products
+                await Product.deleteMany({
+                    userId: req.userId,
+                    productName: { $in: productsToDelete }
+                });
+            }
+        }
+
         return res.json(product);
     } catch (err) {
         console.error('Grade error:', err.message);

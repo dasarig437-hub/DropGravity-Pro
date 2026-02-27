@@ -430,7 +430,11 @@ export default function Dashboard() {
                         });
                         // Sort each group by version desc
                         Object.values(groups).forEach(arr => arr.sort((a, b) => b.version - a.version));
-                        const groupEntries = Object.entries(groups);
+
+                        // Sort groups by the newest createdAt across the whole group, then take top 5
+                        const groupEntries = Object.entries(groups)
+                            .sort((a, b) => new Date(b[1][0].createdAt) - new Date(a[1][0].createdAt))
+                            .slice(0, 5);
 
                         return (
                             <div className="saved-products-list">

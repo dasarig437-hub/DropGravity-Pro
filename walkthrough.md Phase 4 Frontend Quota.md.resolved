@@ -1,0 +1,81 @@
+# Phase 4 — Frontend Quota Awareness & Ad Unlock UI
+
+This walkthrough details the implementation of the frontend quota system and ad unlock UI in DropGravity Pro. These changes make the backend quotas visible and interactive for users.
+
+## 1️⃣ API Layer Update `[src/services/api.js]`
+
+The API layer was updated to handle quota enforcement responses gracefully without crashing the UI.
+
+- **[analyzeProducts()](file:///c:/Users/dasar/DropGravity%20Pro/src/services/api.js#94-119) Enhancements:**
+  - Now specifically checks for `res.status === 403` (Forbidden), which the backend returns when a quota is exceeded.
+  - Instead of throwing a generic error, it parses the JSON response and returns a structured object indicating the quota status:
+    ```javascript
+    return {
+        quotaBlocked: true,
+        remainingBase: data.remainingBase ?? 0,
+        bonusCredits: data.bonusCredits ?? 0,
+        dailySearchCount: data.dailySearchCount ?? 0,
+        adAvailable: data.adAvailable ?? false,
+        error: data.error || 'Daily search limit reached.',
+    };
+    ```
+- **New [completeAd()](file:///c:/Users/dasar/DropGravity%20Pro/src/services/api.js#120-130) Endpoint:**
+  - Added a new function to call `POST /api/ad-complete` to simulate watching an ad and receive bonus credits.
+
+## 2️⃣ Finder Component State `[src/pages/Finder.jsx]`
+
+New state variables were introduced to manage the quota UI and ad simulation.
+
+```javascript
+// Quota state (Phase 4)
+const [quotaInfo, setQuotaInfo] = useState(null);
+const [quotaBlocked, setQuotaBlocked] = useState(false);
+const [watchingAd, setWatchingAd] = useState(false);
+const [quotaUsage, setQuotaUsage] = useState(null); // Tracks usage from last successful analyze
+```
+
+## 3️⃣ Pro User Bypass
+
+The UI respects the user's plan, pulling from the `AuthContext`:
+```javascript
+const isPro = user?.plan === 'pro';
+```
+Pro users never see the Quota Blocked card or the Watch Ad buttons. 
+
+## 4️⃣ Analyze Handler Updates
+
+The [handleSearch](file:///c:/Users/dasar/DropGravity%20Pro/src/pages/Finder.jsx#112-140) and [handleQuickQuery](file:///c:/Users/dasar/DropGravity%20Pro/src/pages/Finder.jsx#145-164) functions were updated to process the new structured response from [analyzeProducts()](file:///c:/Users/dasar/DropGravity%20Pro/src/services/api.js#94-119).
+
+- **[processAnalyzeResult()](file:///c:/Users/dasar/DropGravity%20Pro/src/pages/Finder.jsx#69-86) Helper:**
+  - Checks if `data.quotaBlocked` is true.
+  - If true: Sets `quotaBlocked` state to true, saves `quotaInfo`, and clears products. **This prevents generic error toasts.**
+  - If false: Updates the product list, signal strength, and the current `quotaUsage` (if provided by the backend).
+
+## 5️⃣ Daily Usage Indicator
+
+A new indicator appears above the search bar, showing the user's current status:
+
+- **Free Users:** Displays `Searches Today: [used] / [limit] (+[bonus] bonus)`
+- **Pro Users:** Displays an unlimited badge with a lightning bolt: `Pro Plan — Unlimited Searches`
+
+## 6️⃣ Daily Limit Reached UI Card
+
+When `quotaBlocked` becomes true, the product grid is completely hidden and replaced by a prominent "Daily Limit Reached" card.
+
+- Displays the exact count of base and bonus remaining (both 0 when blocked).
+- **If Ad Available:** Renders the "Watch Ad to Unlock 2 More Searches" button.
+- **If Ad Exhausted (max 2/day):** Renders the text: "You've used your 2 daily ad unlocks. Come back tomorrow."
+
+## 7️⃣ Watch Ad Simulation Flow
+
+The [handleWatchAd()](file:///c:/Users/dasar/DropGravity%20Pro/src/pages/Finder.jsx#165-190) function manages the entire unlock process seamlessly:
+
+1. **State:** Sets `watchingAd` to true (shows loading spinner on button).
+2. **Simulation:** Awaits a 2-second `Promise` to simulate viewing a rewarded video ad.
+3. **API Call:** Calls [completeAd()](file:///c:/Users/dasar/DropGravity%20Pro/src/services/api.js#120-130) to register the view on the backend and get +2 bonus credits.
+4. **State Reset:** Clears `quotaBlocked` and `quotaInfo`.
+5. **Auto-Resume:** Automatically re-triggers [analyzeProducts()](file:///c:/Users/dasar/DropGravity%20Pro/src/services/api.js#94-119) with the user's original search query.
+
+---
+
+> **Note:** The backend logic enforces all actual quotas and limits (max ads per day, max free searches). The frontend UI only relies on the backend's source of truth.
