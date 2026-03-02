@@ -14,10 +14,73 @@ import TrendCache from './models/TrendCache.js';
 import { fetchTrendData } from './services/trendService.js';
 import Stripe from 'stripe';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+// Conditionally initialize Stripe — don't crash if key is missing
+let stripe = null;
+if (process.env.STRIPE_SECRET_KEY) {
+    stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+    console.log('✅ Stripe initialized (test mode)');
+} else {
+    console.warn('⚠️  STRIPE_SECRET_KEY not set — payment routes will be disabled');
+}
 
 const app = express();
 app.use(cors());
+
+// ---- Stripe Webhook (MUST be before express.json() for raw body signature verification) ----
+app.post(
+    '/api/payment/webhook',
+    express.raw({ type: 'application/json' }),
+    async (req, res) => {
+        if (!stripe) return res.status(503).json({ error: 'Stripe not configured' });
+        const sig = req.headers['stripe-signature'];
+        const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+        let event;
+        try {
+            event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
+        } catch (err) {
+            console.error(`Webhook signature verification failed:`, err.message);
+            return res.status(400).send(`Webhook Error: ${err.message}`);
+        }
+
+        if (event.type === 'checkout.session.completed') {
+            const session = event.data.object;
+            const userId = session.client_reference_id;
+            const customerId = session.customer;
+            const subscriptionId = session.subscription;
+
+            if (userId) {
+                try {
+                    await User.findByIdAndUpdate(userId, {
+                        plan: 'pro',
+                        stripeCustomerId: customerId,
+                        stripeSubscriptionId: subscriptionId
+                    });
+                    console.log(`✅ User ${userId} upgraded to PRO via Stripe!`);
+                } catch (err) {
+                    console.error('Failed to update user plan on webhook:', err);
+                }
+            }
+        } else if (event.type === 'customer.subscription.deleted') {
+            const subscription = event.data.object;
+            const customerId = subscription.customer;
+
+            try {
+                await User.findOneAndUpdate(
+                    { stripeCustomerId: customerId },
+                    { plan: 'free' } // Downgrade gracefully
+                );
+                console.log(`ℹ️ Subscription ended. User downgraded to free.`);
+            } catch (err) {
+                console.error('Failed to downgrade user on webhook:', err);
+            }
+        }
+
+        res.status(200).end();
+    }
+);
+
+// JSON body parsing (after webhook route so raw body is preserved for Stripe)
 app.use(express.json());
 
 // ---- Rate Limiting ----
@@ -402,6 +465,7 @@ app.post('/api/ad-complete', verifyToken, async (req, res) => {
 // ---- Stripe Payment Routes (Phase 7) ----
 app.post('/api/payment/create-checkout-session', verifyToken, async (req, res) => {
     try {
+        if (!stripe) return res.status(503).json({ error: 'Stripe not configured. Add STRIPE_SECRET_KEY to .env' });
         const user = await User.findById(req.userId);
         if (!user) return res.status(404).json({ error: 'User not found' });
         if (user.plan === 'pro') return res.status(400).json({ error: 'Already subscribed to Pro' });
@@ -428,58 +492,7 @@ app.post('/api/payment/create-checkout-session', verifyToken, async (req, res) =
     }
 });
 
-// Webhook requires raw body parsing to verify Stripe signature
-app.post(
-    '/api/payment/webhook',
-    express.raw({ type: 'application/json' }),
-    async (req, res) => {
-        const sig = req.headers['stripe-signature'];
-        const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
-        let event;
-        try {
-            event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
-        } catch (err) {
-            console.error(`Webhook signature verification failed:`, err.message);
-            return res.status(400).send(`Webhook Error: ${err.message}`);
-        }
-
-        if (event.type === 'checkout.session.completed') {
-            const session = event.data.object;
-            const userId = session.client_reference_id;
-            const customerId = session.customer;
-            const subscriptionId = session.subscription;
-
-            if (userId) {
-                try {
-                    await User.findByIdAndUpdate(userId, {
-                        plan: 'pro',
-                        stripeCustomerId: customerId,
-                        stripeSubscriptionId: subscriptionId
-                    });
-                    console.log(`✅ User ${userId} upgraded to PRO via Stripe!`);
-                } catch (err) {
-                    console.error('Failed to update user plan on webhook:', err);
-                }
-            }
-        } else if (event.type === 'customer.subscription.deleted') {
-            const subscription = event.data.object;
-            const customerId = subscription.customer;
-
-            try {
-                await User.findOneAndUpdate(
-                    { stripeCustomerId: customerId },
-                    { plan: 'free' } // Downgrade gracefully
-                );
-                console.log(`ℹ️ Subscription ended. User downgraded to free.`);
-            } catch (err) {
-                console.error('Failed to downgrade user on webhook:', err);
-            }
-        }
-
-        res.status(200).end();
-    }
-);
+// (Webhook route moved above express.json() — see top of file)
 
 // ---- Start Server ----
 const PORT = process.env.PORT || 5000;
