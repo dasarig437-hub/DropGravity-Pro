@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { niches, regions } from '../data/mockData';
 import { getGradeColor } from '../engine/gradingEngine';
-import { analyzeProducts, fetchTrendingProducts, completeAd } from '../services/api';
+import { analyzeProducts, fetchTrendingProducts, completeAd, createCheckoutSession } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import './Finder.css';
 
@@ -50,6 +50,8 @@ export default function Finder() {
     const [quotaUsage, setQuotaUsage] = useState(null); // from last successful analyze
 
     const isPro = user?.plan === 'pro';
+
+    const [upgrading, setUpgrading] = useState(false);
 
     const searchTabs = [
         { id: 'keyword', label: 'Keyword' },
@@ -432,6 +434,32 @@ export default function Finder() {
                                 Bonus remaining: <strong>{quotaInfo?.bonusCredits ?? 0}</strong>
                             </p>
 
+                            {/* Primary: Upgrade CTA */}
+                            <button
+                                className="quota-upgrade-btn"
+                                onClick={async () => {
+                                    setUpgrading(true);
+                                    try {
+                                        const data = await createCheckoutSession();
+                                        if (data.url) window.location.href = data.url;
+                                    } catch (err) {
+                                        console.error('Upgrade failed:', err);
+                                    } finally {
+                                        setUpgrading(false);
+                                    }
+                                }}
+                                disabled={upgrading}
+                            >
+                                {upgrading ? <Loader2 size={16} className="spin-icon" /> : <Zap size={16} />}
+                                Want Unlimited Searches? Upgrade to Pro
+                            </button>
+                            <p className="quota-upgrade-sub">No ads, no limits, advanced insights</p>
+
+                            <div className="quota-divider">
+                                <span>or</span>
+                            </div>
+
+                            {/* Secondary: Watch Ad */}
                             {quotaInfo?.adAvailable ? (
                                 <button
                                     className={`quota-ad-btn ${watchingAd ? 'loading' : ''}`}
@@ -487,7 +515,13 @@ export default function Finder() {
                                         <GitCompareArrows size={14} />
                                     </button>
                                     <div className="fpc-header">
-                                        <span className="fpc-emoji">{product.image}</span>
+                                        <span className="fpc-emoji">
+                                            {product.image?.startsWith('http') ? (
+                                                <img src={product.image} alt={product.name} className="fpc-img" />
+                                            ) : (
+                                                product.image
+                                            )}
+                                        </span>
                                         <div className="fpc-grade" style={{
                                             background: `${getGradeColor(product.grade)}22`,
                                             color: getGradeColor(product.grade),

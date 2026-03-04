@@ -1,0 +1,70 @@
+# Phase 8.1 — Amazon Best Sellers Integration
+
+## What Changed
+
+Your product pipeline went from **100% synthetic** to **real Amazon products**.
+
+### Before
+```
+User searches "beauty brush"
+  → generateProducts() creates "Smart Beauty Brush Pro"
+  → Fake name, fake price, fake orders
+```
+
+### After
+```
+User searches "beauty brush"
+  → Amazon Best Sellers (Beauty) scraped
+  → "Mighty Patch Original from Hero Cosmetics" returned
+  → Real name + estimated business metrics
+```
+
+---
+
+## Test Results
+
+Search: **"beauty brush"** → 8 real Amazon products returned
+
+| Product | Sell Price | Supplier Est. | Margin | Grade |
+|---|---|---|---|---|
+| Mighty Patch Original (Hero Cosmetics) | $28.68 | $9.60 | 67% | D |
+| Clean Skin Club Towels XL | $22.69 | $8.05 | 65% | D |
+| Neutrogena Makeup Remover Wipes | $37.92 | $17.21 | 55% | D |
+| medicube Toner Pads Zero Pore | $39.67 | $16.32 | 59% | D |
+
+All products have `dataSource: 'amazon'` ✅
+
+---
+
+## Files Created/Modified
+
+| File | Type | Purpose |
+|---|---|---|
+| [AmazonCache.js](file:///c:/Users/dasar/DropGravity%20Pro/server/models/AmazonCache.js) | NEW | MongoDB cache (6-hour TTL) |
+| [amazonService.js](file:///c:/Users/dasar/DropGravity%20Pro/server/services/amazonService.js) | NEW | Best Sellers scraper + keyword filter |
+| [productCandidateService.js](file:///c:/Users/dasar/DropGravity%20Pro/server/services/productCandidateService.js) | NEW | Amazon → product shape adapter |
+| [index.js](file:///c:/Users/dasar/DropGravity%20Pro/server/index.js) | MODIFIED | Pipeline: Cache → Amazon → Fallback |
+
+Dependencies added: `axios`, `cheerio`
+
+## Architecture
+
+```mermaid
+flowchart LR
+    A[User Search] --> B{AmazonCache < 6hrs?}
+    B -->|Yes| D[Cached Products]
+    B -->|No| C[Scrape Best Sellers]
+    C --> D
+    C -->|Fail| E["generateProducts() fallback"]
+    D --> F[Google Trends overlay]
+    F --> G[gradeProduct]
+    G --> H[Return to frontend]
+    E --> F
+```
+
+## Key Design Decisions
+- **Best Sellers pages** (not search results) — more stable, less likely to get blocked
+- **6-hour MongoDB cache** — reduces Amazon requests dramatically
+- **Keyword filtering** — scrapes category page, filters by relevance
+- **Fallback guaranteed** — if Amazon fails, [generateProducts()](file:///c:/Users/dasar/DropGravity%20Pro/server/engine/productGenerator.js#365-412) runs automatically
+- **`dataSource: 'amazon'`** — ready for future multi-source architecture

@@ -11,7 +11,10 @@ import { gradeProduct } from './engine/gradingEngine.js';
 import { generateProducts, getSignalStrength } from './engine/productGenerator.js';
 import { resetDailyQuotaIfNeeded } from './utils/quotaUtils.js';
 import TrendCache from './models/TrendCache.js';
+import AmazonCache from './models/AmazonCache.js';
 import { fetchTrendData } from './services/trendService.js';
+import { fetchAmazonProducts } from './services/amazonService.js';
+import { buildCandidateProducts } from './services/productCandidateService.js';
 import Stripe from 'stripe';
 
 // Conditionally initialize Stripe — don't crash if key is missing
@@ -250,9 +253,47 @@ app.post('/api/products/analyze', verifyToken, async (req, res) => {
             }
         }
 
-        // ---- Generate products (deterministic engine unchanged) ----
+        // ---- Product Pipeline: Amazon (real) → Fallback (synthetic) ----
         const signal = getSignalStrength(kw);
-        let products = generateProducts(kw, 6);
+        let products;
+        let usedAmazon = false;
+
+        try {
+            // Check 6-hour cache first
+            const normalizedKw = kw.trim().toLowerCase();
+            const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000);
+            const cached = await AmazonCache.findOne({ keyword: normalizedKw });
+
+            if (cached && cached.fetchedAt > sixHoursAgo && cached.products.length >= 3) {
+                console.log(`[Amazon] Cache hit for "${normalizedKw}"`);
+                products = cached.products;
+                usedAmazon = true;
+            } else {
+                // Fetch fresh from Amazon Best Sellers
+                const amazonResults = await fetchAmazonProducts(kw);
+                if (amazonResults && amazonResults.length >= 3) {
+                    const category = signal !== 'low' ? (amazonResults[0]?.category || 'Trending') : 'Trending';
+                    products = buildCandidateProducts(amazonResults, kw, category);
+                    usedAmazon = true;
+
+                    // Cache the results
+                    await AmazonCache.findOneAndUpdate(
+                        { keyword: normalizedKw },
+                        { keyword: normalizedKw, products, fetchedAt: new Date() },
+                        { upsert: true, new: true }
+                    );
+                    console.log(`[Amazon] Cached ${products.length} products for "${normalizedKw}"`);
+                }
+            }
+        } catch (err) {
+            console.warn('[Amazon] Pipeline failed, using fallback:', err.message);
+        }
+
+        // Fallback to synthetic products if Amazon didn't deliver
+        if (!products || products.length < 3) {
+            products = generateProducts(kw, 6);
+            console.log(`[Fallback] Using generated products for "${kw}"`);
+        }
 
         // ---- Google Trends Integration (Phase 6) ----
         try {

@@ -169,6 +169,11 @@
     color: var(--text-tertiary);
 }
 
+.user-plan.pro {
+    color: #a78bfa;
+    font-weight: 600;
+}
+
 .user-chevron {
     color: var(--text-tertiary);
     transition: transform 0.2s ease;

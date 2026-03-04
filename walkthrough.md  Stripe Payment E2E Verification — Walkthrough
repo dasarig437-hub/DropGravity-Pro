@@ -1,0 +1,85 @@
+# Stripe Payment E2E Verification — Walkthrough
+
+## All 6 Steps Verified ✅
+
+| Step | Result |
+|---|---|
+| 1. Stripe dependency | ✅ `stripe@20.4.0` |
+| 2. User model fields | ✅ `stripeCustomerId` + `stripeSubscriptionId` |
+| 3. Webhook body parsing | ❌→✅ Critical bug fixed |
+| 4. Environment variables | ✅ All 3 configured |
+| 5. Webhook delivery | ✅ Stripe webhook fires successfully |
+| 6. End-to-end test | ✅ Full pass — MongoDB confirmed `plan: pro` |
+
+---
+
+## Bug #1 Fixed: Webhook Body Parsing (Step 3)
+
+`express.json()` was before the webhook route, destroying the raw body needed for Stripe signature verification.
+
+```diff
+-app.use(express.json());  // line 21
+-// ... 400 lines later ...
+-app.post('/api/payment/webhook', ...)  // too late!
++// Webhook FIRST
++app.post('/api/payment/webhook', express.raw(...), ...);
++// THEN JSON parsing
++app.use(express.json());
+```
+
+Also made Stripe init resilient — server no longer crashes without keys.
+
+---
+
+## Bug #2 Fixed: Post-Payment Plan Refresh
+
+After Stripe payment, the UI showed "Free Plan" because the JWT in localStorage still had `plan: free`.
+
+### Changes Made
+
+| File | Change |
+|---|---|
+| [auth.js](file:///c:/Users/dasar/DropGravity%20Pro/server/routes/auth.js) | Added `GET /api/auth/me` — returns fresh user data + new JWT from DB |
+| [api.js](file:///c:/Users/dasar/DropGravity%20Pro/src/services/api.js) | Added [fetchCurrentUser()](file:///c:/Users/dasar/DropGravity%20Pro/src/services/api.js#150-160) — calls `/api/auth/me`, saves to localStorage |
+| [AuthContext.jsx](file:///c:/Users/dasar/DropGravity%20Pro/src/context/AuthContext.jsx) | Added [refreshUser()](file:///c:/Users/dasar/DropGravity%20Pro/src/context/AuthContext.jsx#49-59) method exposed in context |
+| [Dashboard.jsx](file:///c:/Users/dasar/DropGravity%20Pro/src/pages/Dashboard.jsx) | Detects `?upgrade=success` → auto-calls [refreshUser()](file:///c:/Users/dasar/DropGravity%20Pro/src/context/AuthContext.jsx#49-59) |
+
+### Flow
+```
+Stripe redirect → /dashboard?upgrade=success
+  → Dashboard useEffect detects param
+  → calls refreshUser()
+  → GET /api/auth/me returns { plan: "pro", token: "..." }
+  → AuthContext updates state
+  → UI shows "Pro Plan", removes upgrade buttons
+```
+
+---
+
+## Proof
+
+### Stripe Checkout ($9.99/month)
+![Stripe Checkout](stripe_checkout_page_1772518057446.png)
+
+### Server Logs
+```
+✅ Stripe initialized (test mode)
+✅ MongoDB connected
+✅ User 69a679ed55757f353941f126 upgraded to PRO via Stripe!
+```
+
+### MongoDB
+```
+plan: pro
+stripeCustomerId: cus_U4w0tc6OgkEaqo
+stripeSubscriptionId: sub_1T6m8GKChvnjiMz5M7FajhVv
+```
+
+### API /me Endpoint
+```
+Login plan: pro
+API /me plan: pro
+```
+
+### Browser refreshUser() Verified
+Network traffic confirmed `GET /api/auth/me` fires automatically on `?upgrade=success` redirect.

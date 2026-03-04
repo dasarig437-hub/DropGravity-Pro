@@ -5,6 +5,7 @@ import {
     logout as apiLogout,
     getToken,
     getUser,
+    fetchCurrentUser,
 } from '../services/api';
 
 const AuthContext = createContext(null);
@@ -45,8 +46,19 @@ export function AuthProvider({ children }) {
         setToken(null);
     }
 
+    async function refreshUser() {
+        try {
+            const data = await fetchCurrentUser();
+            setUser(data.user);
+            setToken(data.token);
+            return data;
+        } catch (err) {
+            console.error('Failed to refresh user:', err);
+        }
+    }
+
     return (
-        <AuthContext.Provider value={{ user, token, isAuthenticated, login, register, logout }}>
+        <AuthContext.Provider value={{ user, token, isAuthenticated, login, register, logout, refreshUser }}>
             {children}
         </AuthContext.Provider>
     );

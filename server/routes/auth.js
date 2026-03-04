@@ -114,4 +114,35 @@ router.post('/login', async (req, res) => {
     }
 });
 
+/**
+ * GET /api/auth/me — returns fresh user data from DB (used after plan upgrade)
+ */
+import verifyToken from '../middleware/verifyToken.js';
+
+router.get('/me', verifyToken, async (req, res) => {
+    try {
+        const user = await User.findById(req.userId);
+        if (!user) return res.status(404).json({ error: 'User not found.' });
+
+        // Issue a fresh token with current plan
+        const token = jwt.sign(
+            { userId: user._id, plan: user.plan },
+            process.env.JWT_SECRET,
+            { expiresIn: '7d' }
+        );
+
+        return res.json({
+            token,
+            user: {
+                id: user._id,
+                email: user.email,
+                plan: user.plan,
+            },
+        });
+    } catch (err) {
+        console.error('Me error:', err.message);
+        return res.status(500).json({ error: 'Internal server error.' });
+    }
+});
+
 export default router;

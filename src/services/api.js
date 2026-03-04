@@ -147,4 +147,13 @@ export async function createCheckoutSession() {
     return data;
 }
 
-
+export async function fetchCurrentUser() {
+    const res = await authFetch('/api/auth/me');
+    const data = await res.json();
+    if (!res.ok) {
+        throw new Error(data.error || 'Failed to fetch user');
+    }
+    // Save refreshed token + user to localStorage
+    saveAuth(data);
+    return data;
+}

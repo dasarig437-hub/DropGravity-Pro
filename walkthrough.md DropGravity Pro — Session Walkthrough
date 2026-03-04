@@ -1,0 +1,50 @@
+# DropGravity Pro — Session Walkthrough
+
+## Phase 1: Pro Value Amplification Layer ✅
+
+3 frontend features to increase upgrade conversion:
+
+| Feature | Files Changed |
+|---|---|
+| Pro Insight Box (locked for free, real values for pro) | [Dashboard.jsx](file:///c:/Users/dasar/DropGravity%20Pro/src/pages/Dashboard.jsx), [Dashboard.css](file:///c:/Users/dasar/DropGravity%20Pro/src/pages/Dashboard.css) |
+| Upgrade CTA above Watch Ad in quota block | [Finder.jsx](file:///c:/Users/dasar/DropGravity%20Pro/src/pages/Finder.jsx), [Finder.css](file:///c:/Users/dasar/DropGravity%20Pro/src/pages/Finder.css) |
+| Pro badge glow + status reinforcement | `Topbar.jsx/css`, `Sidebar.jsx/css` |
+
+---
+
+## Phase 2: Settings Page Full Rebuild ✅
+
+### What Was Removed
+- API Keys section (fake)
+- Data & Export section (fake)
+- Notifications section (4 toggles, none wired)
+- Appearance section (dark mode toggle, not wired)
+- Targets & Goals section (sliders, not persisted)
+- Agency plan at $99/mo (doesn't exist)
+- Hardcoded `demo@dropgravity.pro` email
+- Hardcoded "Free Plan" regardless of actual plan
+- Wrong price ($29/mo → real is $9.99/mo)
+
+### What Was Built (real, wired, functional)
+
+**Profile Section:**
+- Real email from `user.email`
+- Plan badge (Free or ⚡ Pro) from `user.plan`
+- Sign Out button → calls [logout()](file:///c:/Users/dasar/DropGravity%20Pro/src/context/AuthContext.jsx#43-48) from AuthContext
+
+**Plan & Billing Section:**
+- Dynamic plan status card (Free vs Pro, different styling)
+- Free users: Upgrade offer with real $9.99/mo price, feature list, Stripe-wired button
+- Pro users: "Pro subscription active" + "Manage Subscription (Coming Soon)" placeholder
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| [Settings.jsx](file:///c:/Users/dasar/DropGravity%20Pro/src/pages/Settings.jsx) | Full rewrite — 335 → 162 lines |
+| [Settings.css](file:///c:/Users/dasar/DropGravity%20Pro/src/pages/Settings.css) | Full rewrite — clean professional styles |
+
+### Verification
+- ✅ Vite HMR: both files compile with zero errors
+- ✅ AuthContext: [logout](file:///c:/Users/dasar/DropGravity%20Pro/src/context/AuthContext.jsx#43-48), `user`, [useAuth](file:///c:/Users/dasar/DropGravity%20Pro/src/context/AuthContext.jsx#67-72) all confirmed available
+- ✅ [createCheckoutSession](file:///c:/Users/dasar/DropGravity%20Pro/src/services/api.js#139-149) import confirmed working

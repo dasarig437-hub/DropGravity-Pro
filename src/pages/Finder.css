@@ -245,6 +245,13 @@
     font-size: 1.8rem;
 }
 
+.fpc-img {
+    width: 36px;
+    height: 36px;
+    object-fit: cover;
+    border-radius: var(--radius-sm);
+}
+
 .fpc-grade {
     width: 28px;
     height: 28px;
@@ -501,8 +508,8 @@
     color: var(--text-primary);
 }
 
-/* Watch Ad Button */
-.quota-ad-btn {
+/* Upgrade CTA inside Quota Block */
+.quota-upgrade-btn {
     display: inline-flex;
     align-items: center;
     gap: 8px;
@@ -517,6 +524,58 @@
     cursor: pointer;
     border: none;
     margin-top: 4px;
+}
+
+.quota-upgrade-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 30px rgba(139, 92, 246, 0.5);
+}
+
+.quota-upgrade-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.8;
+}
+
+.quota-upgrade-sub {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+    margin-top: -4px;
+}
+
+.quota-divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 200px;
+    color: var(--text-tertiary);
+    font-size: 0.75rem;
+    font-weight: 500;
+    margin: 4px 0;
+}
+
+.quota-divider::before,
+.quota-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border-primary);
+}
+
+/* Watch Ad Button (secondary) */
+.quota-ad-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 24px;
+    border-radius: var(--radius-lg);
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: var(--bg-glass);
+    border: 1px solid var(--border-primary);
+    transition: all var(--transition-fast);
+    cursor: pointer;
+    margin-top: 0;
 }
 
 .quota-ad-btn:hover:not(:disabled) {

@@ -7,13 +7,13 @@ import {
     TrendingUp, TrendingDown, AlertTriangle, CheckCircle, CheckCircle2,
     DollarSign, Target, Users, Zap, ShieldCheck,
     MessageSquare, BarChart3, ArrowUpRight, ArrowDownRight, RefreshCw, Download,
-    Clock, Package, Loader2, XCircle, ChevronDown, ArrowUp, ArrowDown
+    Clock, Package, Loader2, XCircle, ChevronDown, ArrowUp, ArrowDown, Lock, Flame
 } from 'lucide-react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { dailyAGrade, trendChartData, demandForecast, revenueData } from '../data/mockData';
 import { gradeProduct, getGradeColor, getLetterGrade } from '../engine/gradingEngine';
 import { useAuth } from '../context/AuthContext';
-import { fetchMyProducts, gradeProductAPI } from '../services/api';
+import { fetchMyProducts, gradeProductAPI, createCheckoutSession } from '../services/api';
 import './Dashboard.css';
 
 const CustomTooltip = ({ active, payload, label }) => {
@@ -33,8 +33,20 @@ const CustomTooltip = ({ active, payload, label }) => {
 };
 
 export default function Dashboard() {
-    const { isAuthenticated } = useAuth();
+    const { isAuthenticated, refreshUser, user } = useAuth();
+    const isPro = user?.plan === 'pro';
     const location = useLocation();
+    const [searchParams, setSearchParams] = useSearchParams();
+
+    // Detect ?upgrade=success and refresh user data from server
+    useEffect(() => {
+        if (searchParams.get('upgrade') === 'success') {
+            refreshUser().then(() => {
+                // Clear the query param so it doesn't re-trigger
+                setSearchParams({}, { replace: true });
+            });
+        }
+    }, [searchParams]);
 
     // Get product from navigation state, fallback to dailyAGrade
     const incomingProduct = location.state?.product;
@@ -125,6 +137,26 @@ export default function Dashboard() {
     const riskPercentage = analysis.risk.score;
     const saturationPercentage = product.marketSaturation;
 
+    // Pro Insight values (computed from existing metrics)
+    const proInsights = {
+        demandMomentum: Math.round((product.trendVelocity * 0.7 + (100 - product.marketSaturation) * 0.3)),
+        commercialIntent: product.profitMargin > 60 ? 'High' : product.profitMargin > 35 ? 'Moderate' : 'Low',
+        competitionPressure: product.adCompetition > 65 ? 'High' : product.adCompetition > 35 ? 'Moderate' : 'Low',
+    };
+
+    const [upgrading, setUpgrading] = useState(false);
+    const handleUpgrade = async () => {
+        setUpgrading(true);
+        try {
+            const data = await createCheckoutSession();
+            if (data.url) window.location.href = data.url;
+        } catch (err) {
+            console.error('Upgrade failed:', err);
+        } finally {
+            setUpgrading(false);
+        }
+    };
+
     const handleReGrade = async () => {
         if (regrading || !isAuthenticated) return;
         setRegrading(true);
@@ -170,12 +202,19 @@ export default function Dashboard() {
             {/* Top Bar */}
             <div className="dash-header animate-fade-in-up">
                 <div className="dash-header-left">
-                    <div className="dash-product-icon">{product.image}</div>
+                    <div className="dash-product-icon">
+                        {product.image?.startsWith('http') ? (
+                            <img src={product.image} alt={product.name} className="dash-product-img" />
+                        ) : (
+                            product.image
+                        )}
+                    </div>
                     <div>
                         <h1 className="dash-product-name">{product.name}</h1>
                         <div className="dash-product-meta">
                             <span className="badge badge-info">{product.category}</span>
                             <span className="badge badge-purple">{product.orders.toLocaleString()} orders</span>
+                            {isPro && <span className="badge badge-pro">🚀 Pro Plan Active — Unlimited Searches & Advanced Insights</span>}
                         </div>
                     </div>
                 </div>
@@ -273,6 +312,54 @@ export default function Dashboard() {
                             <span className="rs-value" style={{ color: '#ef4444' }}>{analysis.profitScenarios.worst.roi}%</span>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            {/* Pro Insights Card */}
+            <div className="pro-insight-section animate-fade-in-up delay-1">
+                <div className={`pro-insight-card glass-card ${!isPro ? 'pro-insight-locked' : ''}`}>
+                    <div className="pro-insight-header">
+                        <Flame size={16} className="pro-insight-icon" />
+                        <span className="pro-insight-title">{isPro ? 'Pro Insights' : 'Pro Insights Locked'}</span>
+                        {!isPro && <Lock size={14} className="pro-insight-lock" />}
+                    </div>
+                    {isPro ? (
+                        <div className="pro-insight-metrics">
+                            <div className="pro-insight-metric">
+                                <span className="pim-label">Demand Momentum</span>
+                                <span className="pim-value">{proInsights.demandMomentum}/100</span>
+                            </div>
+                            <div className="pro-insight-metric">
+                                <span className="pim-label">Commercial Intent</span>
+                                <span className={`pim-value pim-${proInsights.commercialIntent.toLowerCase()}`}>{proInsights.commercialIntent}</span>
+                            </div>
+                            <div className="pro-insight-metric">
+                                <span className="pim-label">Competition Pressure</span>
+                                <span className={`pim-value pim-${proInsights.competitionPressure.toLowerCase()}`}>{proInsights.competitionPressure}</span>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="pro-insight-locked-content">
+                            <div className="pro-insight-metrics pro-insight-placeholder">
+                                <div className="pro-insight-metric">
+                                    <span className="pim-label">Demand Momentum</span>
+                                    <span className="pim-value pim-hidden">——</span>
+                                </div>
+                                <div className="pro-insight-metric">
+                                    <span className="pim-label">Commercial Intent</span>
+                                    <span className="pim-value pim-hidden">——</span>
+                                </div>
+                                <div className="pro-insight-metric">
+                                    <span className="pim-label">Competition Pressure</span>
+                                    <span className="pim-value pim-hidden">——</span>
+                                </div>
+                            </div>
+                            <button className="btn btn-primary btn-sm pro-insight-upgrade-btn" onClick={handleUpgrade} disabled={upgrading}>
+                                {upgrading ? <Loader2 size={14} className="spin-icon" /> : <Zap size={14} />}
+                                Upgrade to unlock advanced intelligence
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
 

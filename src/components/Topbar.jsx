@@ -187,7 +187,7 @@ export default function Topbar({ collapsed, onMobileToggle }) {
                             </div>
                             <div className="user-info">
                                 <span className="user-name">{user?.email || 'User'}</span>
-                                <span className="user-plan">{user?.plan ? `${user.plan.charAt(0).toUpperCase() + user.plan.slice(1)} Plan` : 'Free Plan'}</span>
+                                <span className={`user-plan ${user?.plan === 'pro' ? 'pro' : ''}`}>{user?.plan === 'pro' ? '⚡ Pro Plan' : user?.plan ? `${user.plan.charAt(0).toUpperCase() + user.plan.slice(1)} Plan` : 'Free Plan'}</span>
                             </div>
                             <ChevronDown size={14} className={`user-chevron ${showProfileMenu ? 'open' : ''}`} />
                         </div>

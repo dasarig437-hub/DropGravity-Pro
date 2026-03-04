@@ -34,6 +34,13 @@
     border-radius: var(--radius-md);
 }
 
+.dash-product-img {
+    width: 48px;
+    height: 48px;
+    object-fit: cover;
+    border-radius: var(--radius-sm);
+}
+
 .dash-product-name {
     font-size: 1.4rem;
     font-weight: 800;
@@ -221,6 +228,126 @@
 .rs-value {
     font-size: 0.9rem;
     font-weight: 700;
+}
+
+/* Pro Banner Badge */
+.badge-pro {
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(99, 102, 241, 0.15));
+    color: #a78bfa;
+    border: 1px solid rgba(139, 92, 246, 0.25);
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: var(--radius-full);
+}
+
+/* Pro Insight Card */
+.pro-insight-section {
+    margin-top: -8px;
+}
+
+.pro-insight-card {
+    padding: 20px 24px;
+    border: 1px solid rgba(139, 92, 246, 0.2);
+}
+
+.pro-insight-card:not(.pro-insight-locked) {
+    border-color: rgba(139, 92, 246, 0.3);
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.04), rgba(99, 102, 241, 0.02));
+}
+
+.pro-insight-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.pro-insight-icon {
+    color: #f59e0b;
+}
+
+.pro-insight-title {
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-primary);
+}
+
+.pro-insight-lock {
+    color: var(--text-tertiary);
+    margin-left: auto;
+}
+
+.pro-insight-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+}
+
+.pro-insight-metric {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.pim-label {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+    font-weight: 500;
+}
+
+.pim-value {
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+
+.pim-value.pim-high {
+    color: #10b981;
+}
+
+.pim-value.pim-moderate {
+    color: #f59e0b;
+}
+
+.pim-value.pim-low {
+    color: #ef4444;
+}
+
+.pim-value.pim-hidden {
+    color: var(--text-tertiary);
+    opacity: 0.4;
+    user-select: none;
+    letter-spacing: 2px;
+}
+
+/* Locked state */
+.pro-insight-locked {
+    position: relative;
+    border-color: var(--border-primary);
+}
+
+.pro-insight-locked-content {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.pro-insight-placeholder .pim-label {
+    opacity: 0.5;
+}
+
+.pro-insight-upgrade-btn {
+    align-self: flex-start;
+    gap: 6px;
+}
+
+@media (max-width: 768px) {
+    .pro-insight-metrics {
+        grid-template-columns: 1fr;
+    }
 }
 
 /* Metrics */

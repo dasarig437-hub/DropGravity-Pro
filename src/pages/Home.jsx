@@ -185,7 +185,13 @@ export default function Home() {
                     {trendingProducts.slice(0, 6).map((product) => (
                         <div key={product.id} className="product-card glass-card" onClick={() => goToProduct(product)}>
                             <div className="pc-header">
-                                <div className="pc-emoji">{product.image}</div>
+                                <div className="pc-emoji">
+                                    {product.image?.startsWith('http') ? (
+                                        <img src={product.image} alt={product.name} className="pc-img" />
+                                    ) : (
+                                        product.image
+                                    )}
+                                </div>
                                 <div className="pc-grade-badge" style={{
                                     background: `${getGradeColor(product.grade)}22`,
                                     color: getGradeColor(product.grade),
@@ -224,7 +230,13 @@ export default function Home() {
                 <div className="recent-list">
                     {trendingProducts.slice(0, 4).map((product) => (
                         <div key={product.id} className="recent-item glass-card glass-card-sm" onClick={() => goToProduct(product)}>
-                            <span className="recent-emoji">{product.image}</span>
+                            <span className="recent-emoji">
+                                {product.image?.startsWith('http') ? (
+                                    <img src={product.image} alt={product.name} className="recent-img" />
+                                ) : (
+                                    product.image
+                                )}
+                            </span>
                             <div className="recent-info">
                                 <span className="recent-name">{product.name}</span>
                                 <span className="recent-time">2 hours ago</span>

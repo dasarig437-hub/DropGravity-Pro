@@ -1,50 +1,45 @@
 import { useState } from 'react';
-import {
-    User, Globe, DollarSign, Shield, Bell, Moon, Sun,
-    Key, CreditCard, Download, ChevronRight, Palette,
-    Target, AlertTriangle, BarChart3, Mail, Lock, Trash
-} from 'lucide-react';
+import { User, CreditCard, Moon, Sun, LogOut, Zap, Check, Loader2, ExternalLink } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { createCheckoutSession } from '../services/api';
+import { useNavigate } from 'react-router-dom';
 import './Settings.css';
 
 export default function SettingsPage() {
-    const [activeSection, setActiveSection] = useState('general');
-    const [settings, setSettings] = useState({
-        currency: 'USD',
-        country: 'United States',
-        profitGoal: 40,
-        riskTolerance: 50,
-        alertThreshold: 80,
-        darkMode: true,
-        emailNotifs: true,
-        pushNotifs: false,
-        weeklyReport: true,
-        gradeAlerts: true,
-        autoRegrade: true,
-    });
+    const { user, logout } = useAuth();
+    const navigate = useNavigate();
+    const [activeSection, setActiveSection] = useState('profile');
+    const [upgrading, setUpgrading] = useState(false);
 
-    const updateSetting = (key, value) => {
-        setSettings(prev => ({ ...prev, [key]: value }));
+    const isPro = user?.plan === 'pro';
+
+    const handleUpgrade = async () => {
+        setUpgrading(true);
+        try {
+            const data = await createCheckoutSession();
+            if (data.url) window.location.href = data.url;
+        } catch (err) {
+            console.error('Upgrade failed:', err);
+        } finally {
+            setUpgrading(false);
+        }
+    };
+
+    const handleLogout = () => {
+        logout();
+        navigate('/login', { replace: true });
     };
 
     const sections = [
-        { id: 'general', label: 'General', icon: Globe },
-        { id: 'targets', label: 'Targets & Goals', icon: Target },
-        { id: 'notifications', label: 'Notifications', icon: Bell },
-        { id: 'appearance', label: 'Appearance', icon: Palette },
-        { id: 'billing', label: 'Billing', icon: CreditCard },
-        { id: 'account', label: 'Account', icon: User },
-        { id: 'api', label: 'API Keys', icon: Key },
-        { id: 'data', label: 'Data & Export', icon: Download },
+        { id: 'profile', label: 'Profile', icon: User },
+        { id: 'billing', label: 'Plan & Billing', icon: CreditCard },
     ];
-
-    const currencies = ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY', 'INR'];
-    const countries = ['United States', 'United Kingdom', 'Canada', 'Australia', 'Germany', 'France', 'India', 'Brazil'];
 
     return (
         <div className="settings-page">
             <div className="settings-header animate-fade-in-up">
                 <h1 className="settings-title">Settings</h1>
-                <p className="settings-subtitle">Customize your product grading experience</p>
+                <p className="settings-subtitle">Manage your account and subscription</p>
             </div>
 
             <div className="settings-layout animate-fade-in-up delay-1">
@@ -58,273 +53,131 @@ export default function SettingsPage() {
                         >
                             <s.icon size={16} />
                             <span>{s.label}</span>
-                            <ChevronRight size={14} className="nav-arrow" />
                         </button>
                     ))}
                 </nav>
 
                 {/* Content */}
                 <div className="settings-content">
-                    {activeSection === 'general' && (
+
+                    {/* ---- PROFILE ---- */}
+                    {activeSection === 'profile' && (
                         <div className="settings-panel glass-card animate-fade-in">
-                            <h2 className="panel-title"><Globe size={18} /> General Settings</h2>
-
-                            <div className="setting-row">
-                                <div className="setting-info">
-                                    <label className="setting-label">Default Currency</label>
-                                    <span className="setting-desc">Currency for price displays and profit calculations</span>
-                                </div>
-                                <select className="select-field setting-control" value={settings.currency} onChange={e => updateSetting('currency', e.target.value)}>
-                                    {currencies.map(c => <option key={c}>{c}</option>)}
-                                </select>
-                            </div>
-
-                            <div className="setting-row">
-                                <div className="setting-info">
-                                    <label className="setting-label">Target Country</label>
-                                    <span className="setting-desc">Default market for trend analysis and competition data</span>
-                                </div>
-                                <select className="select-field setting-control" value={settings.country} onChange={e => updateSetting('country', e.target.value)}>
-                                    {countries.map(c => <option key={c}>{c}</option>)}
-                                </select>
-                            </div>
-
-                            <div className="setting-row">
-                                <div className="setting-info">
-                                    <label className="setting-label">Auto Re-Grade</label>
-                                    <span className="setting-desc">Automatically re-grade products every 24 hours</span>
-                                </div>
-                                <div className={`toggle ${settings.autoRegrade ? 'active' : ''}`} onClick={() => updateSetting('autoRegrade', !settings.autoRegrade)}>
-                                    <div className="toggle-knob" />
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {activeSection === 'targets' && (
-                        <div className="settings-panel glass-card animate-fade-in">
-                            <h2 className="panel-title"><Target size={18} /> Targets & Goals</h2>
-
-                            <div className="setting-row">
-                                <div className="setting-info">
-                                    <label className="setting-label">Profit Goal: {settings.profitGoal}%</label>
-                                    <span className="setting-desc">Minimum profit margin you're targeting</span>
-                                </div>
-                                <div className="slider-container">
-                                    <input type="range" className="range-slider" min="10" max="90" value={settings.profitGoal}
-                                        onChange={e => updateSetting('profitGoal', Number(e.target.value))} />
-                                    <div className="slider-labels">
-                                        <span>10%</span><span>90%</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="setting-row">
-                                <div className="setting-info">
-                                    <label className="setting-label">Risk Tolerance: {settings.riskTolerance}%</label>
-                                    <span className="setting-desc">How much risk you're comfortable with</span>
-                                </div>
-                                <div className="slider-container">
-                                    <input type="range" className="range-slider" min="0" max="100" value={settings.riskTolerance}
-                                        onChange={e => updateSetting('riskTolerance', Number(e.target.value))} />
-                                    <div className="slider-labels">
-                                        <span>Conservative</span><span>Aggressive</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="setting-row">
-                                <div className="setting-info">
-                                    <label className="setting-label">Alert Threshold: {settings.alertThreshold}+</label>
-                                    <span className="setting-desc">Only alert me for products scoring above this</span>
-                                </div>
-                                <div className="slider-container">
-                                    <input type="range" className="range-slider" min="50" max="100" value={settings.alertThreshold}
-                                        onChange={e => updateSetting('alertThreshold', Number(e.target.value))} />
-                                    <div className="slider-labels">
-                                        <span>50</span><span>100</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {activeSection === 'notifications' && (
-                        <div className="settings-panel glass-card animate-fade-in">
-                            <h2 className="panel-title"><Bell size={18} /> Notifications</h2>
-
-                            <div className="setting-row">
-                                <div className="setting-info">
-                                    <label className="setting-label">Email Notifications</label>
-                                    <span className="setting-desc">Receive grade alerts and weekly reports via email</span>
-                                </div>
-                                <div className={`toggle ${settings.emailNotifs ? 'active' : ''}`} onClick={() => updateSetting('emailNotifs', !settings.emailNotifs)}>
-                                    <div className="toggle-knob" />
-                                </div>
-                            </div>
-
-                            <div className="setting-row">
-                                <div className="setting-info">
-                                    <label className="setting-label">Push Notifications</label>
-                                    <span className="setting-desc">Browser push notifications for real-time alerts</span>
-                                </div>
-                                <div className={`toggle ${settings.pushNotifs ? 'active' : ''}`} onClick={() => updateSetting('pushNotifs', !settings.pushNotifs)}>
-                                    <div className="toggle-knob" />
-                                </div>
-                            </div>
-
-                            <div className="setting-row">
-                                <div className="setting-info">
-                                    <label className="setting-label">Weekly Report</label>
-                                    <span className="setting-desc">Summary of top products and market trends</span>
-                                </div>
-                                <div className={`toggle ${settings.weeklyReport ? 'active' : ''}`} onClick={() => updateSetting('weeklyReport', !settings.weeklyReport)}>
-                                    <div className="toggle-knob" />
-                                </div>
-                            </div>
-
-                            <div className="setting-row">
-                                <div className="setting-info">
-                                    <label className="setting-label">Grade Alerts</label>
-                                    <span className="setting-desc">Notify when a tracked product's grade changes</span>
-                                </div>
-                                <div className={`toggle ${settings.gradeAlerts ? 'active' : ''}`} onClick={() => updateSetting('gradeAlerts', !settings.gradeAlerts)}>
-                                    <div className="toggle-knob" />
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {activeSection === 'appearance' && (
-                        <div className="settings-panel glass-card animate-fade-in">
-                            <h2 className="panel-title"><Palette size={18} /> Appearance</h2>
-                            <div className="setting-row">
-                                <div className="setting-info">
-                                    <label className="setting-label">Dark Mode</label>
-                                    <span className="setting-desc">Toggle between dark and light theme</span>
-                                </div>
-                                <div className={`toggle ${settings.darkMode ? 'active' : ''}`} onClick={() => updateSetting('darkMode', !settings.darkMode)}>
-                                    <div className="toggle-knob" />
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {activeSection === 'billing' && (
-                        <div className="settings-panel glass-card animate-fade-in">
-                            <h2 className="panel-title"><CreditCard size={18} /> Billing & Plan</h2>
-
-                            <div className="plan-card">
-                                <div className="plan-current">
-                                    <div className="plan-name">Free Plan</div>
-                                    <span className="badge badge-info">Active</span>
-                                </div>
-                                <div className="plan-details">
-                                    <p>3 scans per day • Basic grade</p>
-                                </div>
-                                <div className="plan-upgrade-options">
-                                    <div className="plan-option">
-                                        <div className="po-header">
-                                            <h4>Pro</h4>
-                                            <span className="po-price">$29<small>/mo</small></span>
-                                        </div>
-                                        <ul className="po-features">
-                                            <li>Unlimited scans</li>
-                                            <li>Forecast models</li>
-                                            <li>Product comparison</li>
-                                            <li>AI strategy tips</li>
-                                        </ul>
-                                        <button className="btn btn-primary" style={{ width: '100%' }}>Upgrade to Pro</button>
-                                    </div>
-                                    <div className="plan-option featured">
-                                        <div className="po-header">
-                                            <h4>Agency</h4>
-                                            <span className="po-price">$99<small>/mo</small></span>
-                                        </div>
-                                        <ul className="po-features">
-                                            <li>Multi-store dashboard</li>
-                                            <li>Bulk reports</li>
-                                            <li>White-label PDF</li>
-                                            <li>Priority support</li>
-                                        </ul>
-                                        <button className="btn btn-primary" style={{ width: '100%' }}>Upgrade to Agency</button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {activeSection === 'account' && (
-                        <div className="settings-panel glass-card animate-fade-in">
-                            <h2 className="panel-title"><User size={18} /> Account</h2>
+                            <h2 className="panel-title"><User size={18} /> Profile</h2>
 
                             <div className="setting-row">
                                 <div className="setting-info">
                                     <label className="setting-label">Email</label>
-                                    <span className="setting-desc">demo@dropgravity.pro</span>
+                                    <span className="setting-desc">{user?.email || 'Not signed in'}</span>
                                 </div>
-                                <button className="btn btn-secondary btn-sm"><Mail size={14} /> Change</button>
                             </div>
 
                             <div className="setting-row">
                                 <div className="setting-info">
-                                    <label className="setting-label">Password</label>
-                                    <span className="setting-desc">Last changed 30 days ago</span>
+                                    <label className="setting-label">Current Plan</label>
+                                    <span className="setting-desc">
+                                        {isPro ? (
+                                            <span className="plan-badge plan-badge-pro">⚡ Pro</span>
+                                        ) : (
+                                            <span className="plan-badge plan-badge-free">Free</span>
+                                        )}
+                                    </span>
                                 </div>
-                                <button className="btn btn-secondary btn-sm"><Lock size={14} /> Update</button>
                             </div>
 
                             <div className="setting-row">
                                 <div className="setting-info">
-                                    <label className="setting-label">Two-Factor Authentication</label>
-                                    <span className="setting-desc">Add an extra layer of security</span>
+                                    <label className="setting-label">Member Since</label>
+                                    <span className="setting-desc">
+                                        {user?.createdAt
+                                            ? new Date(user.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short' })
+                                            : '—'}
+                                    </span>
                                 </div>
-                                <button className="btn btn-secondary btn-sm"><Shield size={14} /> Enable</button>
                             </div>
 
-                            <div className="setting-row danger">
-                                <div className="setting-info">
-                                    <label className="setting-label">Delete Account</label>
-                                    <span className="setting-desc">Permanently delete your account and all data</span>
-                                </div>
-                                <button className="btn btn-sm" style={{ color: '#ef4444' }}><Trash size={14} /> Delete</button>
+                            <div className="setting-row setting-row-action">
+                                <button className="btn btn-sm" style={{ color: '#ef4444' }} onClick={handleLogout}>
+                                    <LogOut size={14} /> Sign Out
+                                </button>
                             </div>
                         </div>
                     )}
 
-                    {activeSection === 'api' && (
+                    {/* ---- PLAN & BILLING ---- */}
+                    {activeSection === 'billing' && (
                         <div className="settings-panel glass-card animate-fade-in">
-                            <h2 className="panel-title"><Key size={18} /> API Keys</h2>
-                            <div className="api-key-box">
-                                <div className="api-key-display">
-                                    <code>dg_pro_sk_••••••••••••••••</code>
-                                    <button className="btn btn-ghost btn-sm">Show</button>
-                                </div>
-                                <button className="btn btn-secondary btn-sm">Regenerate Key</button>
-                            </div>
-                            <p className="api-note">Use this key to access the DropGravity Pro API for custom integrations.</p>
-                        </div>
-                    )}
+                            <h2 className="panel-title"><CreditCard size={18} /> Plan & Billing</h2>
 
-                    {activeSection === 'data' && (
-                        <div className="settings-panel glass-card animate-fade-in">
-                            <h2 className="panel-title"><Download size={18} /> Data & Export</h2>
-
-                            <div className="setting-row">
-                                <div className="setting-info">
-                                    <label className="setting-label">Export Scan History</label>
-                                    <span className="setting-desc">Download all your product scans as CSV</span>
+                            {/* Current Plan Card */}
+                            <div className={`plan-status-card ${isPro ? 'plan-status-pro' : ''}`}>
+                                <div className="plan-status-header">
+                                    <div>
+                                        <div className="plan-status-name">
+                                            {isPro ? '⚡ Pro Plan' : 'Free Plan'}
+                                        </div>
+                                        <ul className="plan-features-list">
+                                            {isPro ? (
+                                                <>
+                                                    <li>Unlimited searches</li>
+                                                    <li>Save up to 20 products</li>
+                                                    <li>Pro insights unlocked</li>
+                                                    <li>No ads</li>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <li>3 searches per day</li>
+                                                    <li>+2 searches via ads</li>
+                                                    <li>Save up to 5 products</li>
+                                                </>
+                                            )}
+                                        </ul>
+                                    </div>
+                                    <span className={`plan-status-badge ${isPro ? 'active' : ''}`}>
+                                        {isPro ? 'Active' : 'Current'}
+                                    </span>
                                 </div>
-                                <button className="btn btn-secondary btn-sm"><Download size={14} /> Export CSV</button>
                             </div>
 
-                            <div className="setting-row">
-                                <div className="setting-info">
-                                    <label className="setting-label">Export Reports</label>
-                                    <span className="setting-desc">Download grade reports as PDF</span>
+                            {/* Upgrade or Manage */}
+                            {isPro ? (
+                                <div className="billing-manage">
+                                    <p className="billing-manage-text">
+                                        Your Pro subscription is active. Manage your payment method or cancel anytime through the Stripe customer portal.
+                                    </p>
+                                    <button className="btn btn-secondary btn-sm" disabled>
+                                        <ExternalLink size={14} /> Manage Subscription
+                                        <span className="coming-soon-tag">Coming Soon</span>
+                                    </button>
                                 </div>
-                                <button className="btn btn-secondary btn-sm"><Download size={14} /> Export PDF</button>
-                            </div>
+                            ) : (
+                                <div className="billing-upgrade">
+                                    <div className="upgrade-offer">
+                                        <div className="upgrade-offer-header">
+                                            <h3>Upgrade to Pro</h3>
+                                            <div className="upgrade-price">
+                                                <span className="price-amount">$9.99</span>
+                                                <span className="price-period">/month</span>
+                                            </div>
+                                        </div>
+                                        <ul className="upgrade-features">
+                                            <li><Check size={14} /> Unlimited product searches</li>
+                                            <li><Check size={14} /> Pro Insights (Demand, Intent, Competition)</li>
+                                            <li><Check size={14} /> No ads or daily limits</li>
+                                            <li><Check size={14} /> Save up to 20 products</li>
+                                        </ul>
+                                        <button
+                                            className="btn btn-primary"
+                                            style={{ width: '100%' }}
+                                            onClick={handleUpgrade}
+                                            disabled={upgrading}
+                                        >
+                                            {upgrading ? <Loader2 size={16} className="spin-icon" /> : <Zap size={16} />}
+                                            {upgrading ? 'Redirecting to Stripe...' : 'Upgrade to Pro — $9.99/mo'}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

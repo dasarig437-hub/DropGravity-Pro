@@ -163,6 +163,20 @@
     color: var(--text-secondary);
 }
 
+/* Pro Status Card */
+.pro-status-card {
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.08), rgba(99, 102, 241, 0.06));
+    border-color: rgba(139, 92, 246, 0.25);
+}
+
+.pro-status-icon {
+    color: #a78bfa;
+}
+
+.pro-status-card .upgrade-text strong {
+    color: #a78bfa;
+}
+
 /* Toggle */
 .sidebar-toggle {
     display: flex;

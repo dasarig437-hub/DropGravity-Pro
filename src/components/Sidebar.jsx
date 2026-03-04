@@ -53,19 +53,29 @@ export default function Sidebar({ collapsed, onToggle }) {
                     ))}
                 </nav>
 
-                {/* Upgrade CTA */}
-                {!collapsed && showUpgrade && (
+                {/* Pro Status or Upgrade CTA */}
+                {!collapsed && (
                     <div className="sidebar-upgrade">
-                        <div className="upgrade-card">
-                            <Crown size={20} className="upgrade-icon" />
-                            <div className="upgrade-text">
-                                <strong>Upgrade to Pro</strong>
-                                <span>Unlimited scans & AI insights</span>
+                        {showUpgrade ? (
+                            <div className="upgrade-card">
+                                <Crown size={20} className="upgrade-icon" />
+                                <div className="upgrade-text">
+                                    <strong>Upgrade to Pro</strong>
+                                    <span>Unlimited scans & AI insights</span>
+                                </div>
+                                <button className="btn btn-primary btn-sm" style={{ width: '100%' }} onClick={() => window.location.href = '/settings'}>
+                                    Upgrade Now
+                                </button>
                             </div>
-                            <button className="btn btn-primary btn-sm" style={{ width: '100%' }} onClick={() => window.location.href = '/settings'}>
-                                Upgrade Now
-                            </button>
-                        </div>
+                        ) : (
+                            <div className="upgrade-card pro-status-card">
+                                <Zap size={20} className="pro-status-icon" />
+                                <div className="upgrade-text">
+                                    <strong>Pro Plan Active</strong>
+                                    <span>Unlimited searches & insights</span>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 

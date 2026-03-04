@@ -325,6 +325,13 @@
     font-size: 2rem;
 }
 
+.pc-img {
+    width: 40px;
+    height: 40px;
+    object-fit: cover;
+    border-radius: var(--radius-sm);
+}
+
 .pc-grade-badge {
     width: 32px;
     height: 32px;
@@ -423,6 +430,13 @@
 
 .recent-emoji {
     font-size: 1.4rem;
+}
+
+.recent-img {
+    width: 28px;
+    height: 28px;
+    object-fit: cover;
+    border-radius: var(--radius-sm);
 }
 
 .recent-info {

@@ -1,0 +1,76 @@
+# Pro Value Amplification Layer — Walkthrough
+
+## Goal
+Increase upgrade conversion through visible Pro differentiation. **Frontend only, zero backend changes.**
+
+---
+
+## Feature 1: Pro Insight Box
+
+A new card below the Grade/Risk/Saturation/ROI row on the Dashboard.
+
+**Pro users** see real computed values:
+- Demand Momentum (from trendVelocity + marketSaturation)
+- Commercial Intent (from profitMargin + adCompetition)
+- Competition Pressure (from adCompetition + marketSaturation)
+
+**Free users** see locked placeholders (——) with `"Upgrade to unlock advanced intelligence"` CTA button.
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| [Dashboard.jsx](file:///c:/Users/dasar/DropGravity%20Pro/src/pages/Dashboard.jsx) | Added `proInsights` computation, [handleUpgrade](file:///c:/Users/dasar/DropGravity%20Pro/src/pages/Dashboard.jsx#148-159), Pro Insight card JSX, Pro banner badge |
+| [Dashboard.css](file:///c:/Users/dasar/DropGravity%20Pro/src/pages/Dashboard.css) | `.pro-insight-card`, `.pro-insight-locked`, `.pim-*`, `.badge-pro` styles |
+
+---
+
+## Feature 2: Upgrade CTA in Quota Block
+
+When daily limit is reached, the Finder now shows:
+
+1. **Primary**: `⚡ Want Unlimited Searches? Upgrade to Pro` (gradient button)
+2. Divider: `—— or ——`
+3. **Secondary**: `Watch Ad to Unlock 2 More Searches` (subtle border button)
+
+Upgrade CTA is **above** the ad option. Hierarchy: Pro first, ad second.
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| [Finder.jsx](file:///c:/Users/dasar/DropGravity%20Pro/src/pages/Finder.jsx) | Added [createCheckoutSession](file:///c:/Users/dasar/DropGravity%20Pro/src/services/api.js#139-149) import, `upgrading` state, upgrade button above ad option with "or" divider |
+| [Finder.css](file:///c:/Users/dasar/DropGravity%20Pro/src/pages/Finder.css) | `.quota-upgrade-btn`, `.quota-divider`, `.quota-upgrade-sub` styles; restyled ad button as secondary |
+
+---
+
+## Feature 3: Pro Badge & Status Reinforcement
+
+**Topbar**: Pro users see `⚡ Pro Plan` in purple instead of plain "Pro Plan"
+
+**Sidebar**: Pro users see `Pro Plan Active — Unlimited searches & insights` card instead of "Upgrade to Pro"
+
+**Dashboard**: Pro users see a purple `🚀 Pro Plan Active — Unlimited Searches & Advanced Insights` badge in the product header
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| [Topbar.jsx](file:///c:/Users/dasar/DropGravity%20Pro/src/components/Topbar.jsx) | Conditional [pro](file:///c:/Users/dasar/DropGravity%20Pro/src/pages/Finder.jsx#71-88) class + ⚡ prefix on user-plan span |
+| [Topbar.css](file:///c:/Users/dasar/DropGravity%20Pro/src/components/Topbar.css) | `.user-plan.pro` — purple accent color |
+| [Sidebar.jsx](file:///c:/Users/dasar/DropGravity%20Pro/src/components/Sidebar.jsx) | Pro users see `pro-status-card` instead of upgrade CTA |
+| [Sidebar.css](file:///c:/Users/dasar/DropGravity%20Pro/src/components/Sidebar.css) | `.pro-status-card`, `.pro-status-icon` — subtle purple tint |
+
+---
+
+## Verification
+
+- ✅ Backend starts: `✅ Stripe initialized (test mode)` + `✅ MongoDB connected`
+- ✅ Frontend starts: `VITE v5.4.21 ready in 1366 ms` — no compilation errors
+- ⚠️ Browser visual test blocked by browser tool infrastructure issue — **manual visual check recommended**
+
+## Design Principles Followed
+- No fake blurred values — clean locked placeholders (——)
+- Upgrade CTA above Watch Ad for better conversion hierarchy
+- Value-driven Pro banner ("Unlimited Searches & Advanced Insights")
+- Subtle premium styling — no over-animation, no artificial urgency
