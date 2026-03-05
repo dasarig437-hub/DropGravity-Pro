@@ -6,13 +6,59 @@ import {
     X, Grid, List, SearchX, Loader2, GitCompareArrows, AlertTriangle,
     Tv, Zap, Ban
 } from 'lucide-react';
-import { niches, regions } from '../data/mockData';
 import { getGradeColor } from '../engine/gradingEngine';
 import { analyzeProducts, fetchTrendingProducts, completeAd, createCheckoutSession } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import './Finder.css';
 
 const GRADE_RANK = { A: 1, B: 2, C: 3, D: 4, F: 5 };
+
+// ---- Signal helpers ----
+function getDemandLevel(p) {
+    if (p.trendVelocity > 70) return 'High';
+    if (p.trendVelocity > 40) return 'Medium';
+    return 'Low';
+}
+
+function getCompetitionLevel(p) {
+    const avg = ((p.adCompetition || 50) + (p.marketSaturation || 50)) / 2;
+    if (avg > 60) return 'High';
+    if (avg > 35) return 'Moderate';
+    return 'Low';
+}
+
+function getDemandScore(p) {
+    const trendPart = (p.trendVelocity || 50) * 0.7;
+    const ordersPart = Math.min((p.orders || 0) / 2000, 30) * 0.3;
+    return Math.round(trendPart + ordersPart);
+}
+
+function getSignalColor(label) {
+    const colors = {
+        'High': '#10b981', 'Medium': '#f59e0b', 'Low': '#ef4444',
+        'Moderate': '#f59e0b',
+    };
+    return colors[label] || 'var(--text-secondary)';
+}
+
+function getDemandColor(label) {
+    return { 'High': '#10b981', 'Medium': '#f59e0b', 'Low': '#ef4444' }[label] || '#888';
+}
+
+function getCompetitionColor(label) {
+    // Low competition = good (green), High = bad (red)
+    return { 'Low': '#10b981', 'Moderate': '#f59e0b', 'High': '#ef4444' }[label] || '#888';
+}
+
+const DEFAULT_FILTERS = { demand: 'All', competition: 'All', profit: 'All', trend: 'All', price: 'All', grade: 'All' };
+
+function getPerformanceLabel(score) {
+    if (score >= 90) return 'Excellent';
+    if (score >= 80) return 'Strong';
+    if (score >= 70) return 'Good';
+    if (score >= 60) return 'Risky';
+    return 'Weak';
+}
 
 export default function Finder() {
     const navigate = useNavigate();
@@ -34,13 +80,7 @@ export default function Finder() {
             return JSON.parse(sessionStorage.getItem('compareList') || '[]');
         } catch { return []; }
     });
-    const [filters, setFilters] = useState({
-        niche: 'All Niches',
-        region: 'All Regions',
-        minMargin: 0,
-        minGrade: 'F',
-        maxSaturation: 100,
-    });
+    const [filters, setFilters] = useState({ ...DEFAULT_FILTERS });
     const incomingHandled = useRef(false);
 
     // ---- Quota state (Phase 4) ----
@@ -195,7 +235,7 @@ export default function Finder() {
         setSearched(false);
         setQuotaBlocked(false);
         setQuotaInfo(null);
-        setFilters({ niche: 'All Niches', region: 'All Regions', minMargin: 0, minGrade: 'F', maxSaturation: 100 });
+        setFilters({ ...DEFAULT_FILTERS });
         // Reload trending
         const loadTrending = async () => {
             setLoading(true);
@@ -213,10 +253,18 @@ export default function Finder() {
 
     // Client-side post-filters on API results
     const filteredProducts = products.filter(p => {
-        if (filters.niche !== 'All Niches' && p.category !== filters.niche) return false;
-        if (p.profitMargin < filters.minMargin) return false;
-        if (p.marketSaturation > filters.maxSaturation) return false;
-        if (filters.minGrade !== 'F' && (GRADE_RANK[p.grade] || 5) > (GRADE_RANK[filters.minGrade] || 5)) return false;
+        const demand = getDemandLevel(p);
+        const competition = getCompetitionLevel(p);
+        if (filters.demand !== 'All' && demand !== filters.demand) return false;
+        if (filters.competition !== 'All' && competition !== filters.competition) return false;
+        if (filters.profit === '30+' && p.profitMargin < 30) return false;
+        if (filters.profit === '50+' && p.profitMargin < 50) return false;
+        if (filters.profit === '70+' && p.profitMargin < 70) return false;
+        if (filters.trend !== 'All' && p.trend !== filters.trend.toLowerCase()) return false;
+        if (filters.price === 'Under $30' && p.sellPrice >= 30) return false;
+        if (filters.price === '$30-$100' && (p.sellPrice < 30 || p.sellPrice > 100)) return false;
+        if (filters.price === '$100+' && p.sellPrice < 100) return false;
+        if (filters.grade !== 'All' && p.grade !== filters.grade) return false;
         return true;
     });
 
@@ -383,40 +431,67 @@ export default function Finder() {
                             <h3 className="filters-title"><Filter size={14} /> Filters</h3>
 
                             <div className="filter-group">
-                                <label className="filter-label">Niche</label>
-                                <select className="select-field" value={filters.niche} onChange={e => setFilters({ ...filters, niche: e.target.value })}>
-                                    {niches.map(n => <option key={n}>{n}</option>)}
-                                </select>
+                                <label className="filter-label">Demand</label>
+                                <div className="filter-pills">
+                                    {['All', 'High', 'Medium', 'Low'].map(v => (
+                                        <button key={v} className={`filter-pill ${filters.demand === v ? 'active' : ''}`}
+                                            onClick={() => setFilters({ ...filters, demand: v })}>{v}</button>
+                                    ))}
+                                </div>
                             </div>
 
                             <div className="filter-group">
-                                <label className="filter-label">Region</label>
-                                <select className="select-field" value={filters.region} onChange={e => setFilters({ ...filters, region: e.target.value })}>
-                                    {regions.map(r => <option key={r}>{r}</option>)}
-                                </select>
+                                <label className="filter-label">Competition</label>
+                                <div className="filter-pills">
+                                    {['All', 'Low', 'Moderate', 'High'].map(v => (
+                                        <button key={v} className={`filter-pill ${filters.competition === v ? 'active' : ''}`}
+                                            onClick={() => setFilters({ ...filters, competition: v })}>{v}</button>
+                                    ))}
+                                </div>
                             </div>
 
                             <div className="filter-group">
-                                <label className="filter-label">Min Profit Margin: {filters.minMargin}%</label>
-                                <input type="range" className="range-slider" min="0" max="100" value={filters.minMargin}
-                                    onChange={e => setFilters({ ...filters, minMargin: Number(e.target.value) })} />
+                                <label className="filter-label">Profit Margin</label>
+                                <div className="filter-pills">
+                                    {['All', '30+', '50+', '70+'].map(v => (
+                                        <button key={v} className={`filter-pill ${filters.profit === v ? 'active' : ''}`}
+                                            onClick={() => setFilters({ ...filters, profit: v })}>{v === 'All' ? v : `${v}%`}</button>
+                                    ))}
+                                </div>
                             </div>
 
                             <div className="filter-group">
-                                <label className="filter-label">Max Saturation: {filters.maxSaturation}%</label>
-                                <input type="range" className="range-slider" min="0" max="100" value={filters.maxSaturation}
-                                    onChange={e => setFilters({ ...filters, maxSaturation: Number(e.target.value) })} />
+                                <label className="filter-label">Trend</label>
+                                <div className="filter-pills">
+                                    {['All', 'Rising', 'Stable', 'Declining'].map(v => (
+                                        <button key={v} className={`filter-pill ${filters.trend === v ? 'active' : ''}`}
+                                            onClick={() => setFilters({ ...filters, trend: v })}>{v}</button>
+                                    ))}
+                                </div>
                             </div>
 
                             <div className="filter-group">
-                                <label className="filter-label">Min Grade</label>
-                                <select className="select-field" value={filters.minGrade} onChange={e => setFilters({ ...filters, minGrade: e.target.value })}>
-                                    {['A', 'B', 'C', 'D', 'F'].map(g => <option key={g}>{g}</option>)}
-                                </select>
+                                <label className="filter-label">Price Range</label>
+                                <div className="filter-pills">
+                                    {['All', 'Under $30', '$30-$100', '$100+'].map(v => (
+                                        <button key={v} className={`filter-pill ${filters.price === v ? 'active' : ''}`}
+                                            onClick={() => setFilters({ ...filters, price: v })}>{v}</button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="filter-group">
+                                <label className="filter-label">Grade</label>
+                                <div className="filter-pills">
+                                    {['All', 'A', 'B', 'C', 'D'].map(v => (
+                                        <button key={v} className={`filter-pill ${filters.grade === v ? 'active' : ''}`}
+                                            onClick={() => setFilters({ ...filters, grade: v })}>{v}</button>
+                                    ))}
+                                </div>
                             </div>
 
                             <button className="btn btn-secondary btn-sm" style={{ width: '100%' }}
-                                onClick={() => setFilters({ niche: 'All Niches', region: 'All Regions', minMargin: 0, minGrade: 'F', maxSaturation: 100 })}>
+                                onClick={() => setFilters({ ...DEFAULT_FILTERS })}>
                                 <X size={14} /> Clear All
                             </button>
                         </div>
@@ -522,40 +597,52 @@ export default function Finder() {
                                                 product.image
                                             )}
                                         </span>
-                                        <div className="fpc-grade" style={{
-                                            background: `${getGradeColor(product.grade)}22`,
-                                            color: getGradeColor(product.grade),
-                                            border: `1px solid ${getGradeColor(product.grade)}44`
+                                        <div className="fpc-opportunity" style={{
+                                            borderColor: `${getGradeColor(product.grade)}66`,
+                                            background: `${getGradeColor(product.grade)}12`,
                                         }}>
-                                            {product.grade}
+                                            <span className="fpc-opp-label">Opportunity</span>
+                                            <span className="fpc-opp-grade" style={{ color: getGradeColor(product.grade) }}>
+                                                {product.grade}
+                                            </span>
+                                            <span className="fpc-opp-score">{product.score}</span>
+                                            <span className="fpc-opp-perf" style={{ color: getGradeColor(product.grade) }}>
+                                                {getPerformanceLabel(product.score)}
+                                            </span>
                                         </div>
                                     </div>
                                     <h4 className="fpc-name">{product.name}</h4>
-                                    <div className="fpc-category">{product.category}</div>
-                                    <div className="fpc-stats">
-                                        <div className="fpc-stat">
-                                            <span className="fpc-stat-label">Margin</span>
-                                            <span className="fpc-stat-value" style={{ color: '#10b981' }}>{product.profitMargin}%</span>
+                                    <div className="fpc-signals">
+                                        <div className="signal-row">
+                                            <span className="signal-label">Demand</span>
+                                            <span className="signal-pill" style={{ color: getDemandColor(getDemandLevel(product)), background: `${getDemandColor(getDemandLevel(product))}18` }}>
+                                                {getDemandLevel(product)}
+                                                <span className="signal-score">{getDemandScore(product)}</span>
+                                            </span>
                                         </div>
-                                        <div className="fpc-stat">
-                                            <span className="fpc-stat-label">Trend</span>
-                                            <span className="fpc-stat-value" style={{ color: '#8b5cf6' }}>{product.trendVelocity}</span>
+                                        <div className="signal-row">
+                                            <span className="signal-label">Competition</span>
+                                            <span className="signal-pill" style={{ color: getCompetitionColor(getCompetitionLevel(product)), background: `${getCompetitionColor(getCompetitionLevel(product))}18` }}>
+                                                {getCompetitionLevel(product)}
+                                            </span>
                                         </div>
-                                        <div className="fpc-stat">
-                                            <span className="fpc-stat-label">Sat.</span>
-                                            <span className="fpc-stat-value" style={{ color: product.marketSaturation > 60 ? '#ef4444' : '#06b6d4' }}>{product.marketSaturation}%</span>
+                                        <div className="signal-row">
+                                            <span className="signal-label">Profit</span>
+                                            <span className="signal-pill" style={{ color: '#10b981', background: '#10b98118' }}>
+                                                {product.profitMargin}%
+                                            </span>
+                                        </div>
+                                        <div className="signal-row">
+                                            <span className="signal-label">Trend</span>
+                                            <span className={`signal-pill trend-${product.trend}`}>
+                                                {product.trend === 'rising' ? '↑' : product.trend === 'declining' ? '↓' : '→'} {product.trend}
+                                            </span>
                                         </div>
                                     </div>
                                     <div className="fpc-prices">
                                         <span className="fpc-cost">${Number(product.price).toFixed(2)}</span>
                                         <ArrowRight size={10} />
                                         <span className="fpc-sell">${Number(product.sellPrice).toFixed(2)}</span>
-                                    </div>
-                                    <div className="fpc-footer">
-                                        <span className={`fpc-trend ${product.trend}`}>
-                                            {product.trend === 'rising' ? '↑' : product.trend === 'declining' ? '↓' : '→'} {product.trend}
-                                        </span>
-                                        <span className="fpc-orders">{product.orders.toLocaleString()} orders</span>
                                     </div>
                                 </div>
                             ))}
