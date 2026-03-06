@@ -1,4 +1,6 @@
-const API_BASE = 'http://localhost:5000';
+// Use relative paths so Vite proxy (dev) and any deployment (prod) just work.
+// Do NOT hardcode a host here — it breaks the Vite proxy and production deploys.
+const API_BASE = '';
 
 // ---- Token helpers ----
 export function getToken() {
