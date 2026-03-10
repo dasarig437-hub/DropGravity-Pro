@@ -4,7 +4,7 @@ import googleTrends from 'google-trends-api';
  * Normalizes trend data out of 100 based on average and slope.
  */
 function computeScore(timelineData) {
-    if (!timelineData || timelineData.length === 0) return 50;
+    if (!timelineData || timelineData.length === 0) throw new Error("Missing timeline data for trend calculation");
 
     let totalInterest = 0;
     const values = [];
@@ -44,7 +44,7 @@ function computeScore(timelineData) {
     return trendScore;
 }
 
-export const fetchTrendData = async (keyword) => {
+export const fetchTrendData = async (keyword, retries = 1) => {
     try {
         const today = new Date();
         const thirtyDaysAgo = new Date(today);
@@ -60,8 +60,7 @@ export const fetchTrendData = async (keyword) => {
         const results = JSON.parse(resultsStr);
 
         if (!results || !results.default || !results.default.timelineData || results.default.timelineData.length === 0) {
-            console.warn(`[TrendService] No trend data available for "${keyword}"`);
-            return null; // Force fallback
+            throw new Error(`No trend data available for "${keyword}"`);
         }
 
         const timelineData = results.default.timelineData;
@@ -83,7 +82,12 @@ export const fetchTrendData = async (keyword) => {
         };
 
     } catch (err) {
-        console.error(`[TrendService] Google Trends API failed for "${keyword}":`, err.message);
+        if (retries > 0) {
+            console.warn(`[TrendService] API failed for "${keyword}", retrying... (${retries} left)`);
+            await new Promise(r => setTimeout(r, 500));
+            return fetchTrendData(keyword, retries - 1);
+        }
+        console.error(`[TrendService] Google Trends API fully failed for "${keyword}":`, err.message);
         return null;
     }
 };

@@ -2,8 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
     Search, SlidersHorizontal, Upload, Link, Filter,
-    ChevronDown, ChevronUp, ArrowRight, TrendingUp, Star,
-    X, Grid, List, SearchX, Loader2, GitCompareArrows, AlertTriangle,
+    ChevronDown, ChevronUp, ArrowRight,
+    X, Grid, List, SearchX, Loader2, GitCompareArrows,
     Tv, Zap, Ban
 } from 'lucide-react';
 import { getGradeColor } from '../engine/gradingEngine';
@@ -11,7 +11,6 @@ import { analyzeProducts, fetchTrendingProducts, completeAd, createCheckoutSessi
 import { useAuth } from '../context/AuthContext';
 import './Finder.css';
 
-const GRADE_RANK = { A: 1, B: 2, C: 3, D: 4, F: 5 };
 
 // ---- Signal helpers ----
 function getDemandLevel(p) {
@@ -27,19 +26,7 @@ function getCompetitionLevel(p) {
     return 'Low';
 }
 
-function getDemandScore(p) {
-    const trendPart = (p.trendVelocity || 50) * 0.7;
-    const ordersPart = Math.min((p.orders || 0) / 2000, 30) * 0.3;
-    return Math.round(trendPart + ordersPart);
-}
 
-function getSignalColor(label) {
-    const colors = {
-        'High': '#10b981', 'Medium': '#f59e0b', 'Low': '#ef4444',
-        'Moderate': '#f59e0b',
-    };
-    return colors[label] || 'var(--text-secondary)';
-}
 
 function getDemandColor(label) {
     return { 'High': '#10b981', 'Medium': '#f59e0b', 'Low': '#ef4444' }[label] || '#888';
@@ -53,11 +40,11 @@ function getCompetitionColor(label) {
 const DEFAULT_FILTERS = { demand: 'All', competition: 'All', profit: 'All', trend: 'All', price: 'All', grade: 'All' };
 
 function getPerformanceLabel(score) {
-    if (score >= 90) return 'Excellent';
-    if (score >= 80) return 'Strong';
+    if (score >= 90) return 'High Potential';
+    if (score >= 80) return 'Strong Pick';
     if (score >= 70) return 'Good';
-    if (score >= 60) return 'Risky';
-    return 'Weak';
+    if (score >= 60) return 'Moderate Risk';
+    return 'Avoid';
 }
 
 export default function Finder() {
@@ -72,6 +59,8 @@ export default function Finder() {
     const [loading, setLoading] = useState(false);
     const [searched, setSearched] = useState(false);
     const [signal, setSignal] = useState('high');
+    const [correctedKeyword, setCorrectedKeyword] = useState(null);
+    const [isGeneralFallback, setIsGeneralFallback] = useState(false);
     const [searchShake, setSearchShake] = useState(false);
     const [searchTooltip, setSearchTooltip] = useState('');
     const searchDebounceRef = useRef(false);
@@ -120,6 +109,8 @@ export default function Finder() {
         setQuotaInfo(null);
         setProducts(data.products || data);
         setSignal(data.signal || 'high');
+        setCorrectedKeyword(data.correctedKeyword || null);
+        setIsGeneralFallback(data.isGeneralFallback || false);
         // Update quota usage from backend response
         if (data.quota) {
             setQuotaUsage(data.quota);
@@ -424,6 +415,17 @@ export default function Finder() {
                     </div>
                 </div>
 
+                {/* General Fallback Banner */}
+                {searched && isGeneralFallback && !loading && (
+                    <div className="fallback-banner">
+                        <span className="fallback-banner-icon">⚠️</span>
+                        <span>
+                            No specific results found for <strong>"{searchQuery}"</strong> — showing today's trending products instead.
+                            Try a more specific keyword like <em>"wireless earbuds"</em> or <em>"LED lamp"</em>.
+                        </span>
+                    </div>
+                )}
+
                 <div className="finder-body">
                     {/* Filters Panel */}
                     {showFilters && (
@@ -589,60 +591,51 @@ export default function Finder() {
                                     >
                                         <GitCompareArrows size={14} />
                                     </button>
-                                    <div className="fpc-header">
-                                        <span className="fpc-emoji">
-                                            {product.image?.startsWith('http') ? (
-                                                <img src={product.image} alt={product.name} className="fpc-img" />
-                                            ) : (
-                                                product.image
-                                            )}
-                                        </span>
-                                        <div className="fpc-opportunity" style={{
-                                            borderColor: `${getGradeColor(product.grade)}66`,
-                                            background: `${getGradeColor(product.grade)}12`,
-                                        }}>
-                                            <span className="fpc-opp-label">Opportunity</span>
-                                            <span className="fpc-opp-grade" style={{ color: getGradeColor(product.grade) }}>
-                                                {product.grade}
-                                            </span>
-                                            <span className="fpc-opp-score">{product.score}</span>
-                                            <span className="fpc-opp-perf" style={{ color: getGradeColor(product.grade) }}>
-                                                {getPerformanceLabel(product.score)}
-                                            </span>
+                                    {/* Image Container (New Layout) */}
+                                    <div className="fpc-image-container">
+                                        {product.image?.startsWith('http') ? (
+                                            <img src={product.image} alt={product.name} className="fpc-img-full" />
+                                        ) : (
+                                            <div className="fpc-emoji-full">{product.image}</div>
+                                        )}
+                                        {/* Top-Right Opportunity Badge */}
+                                        <div className="fpc-grade-badge" style={{ backgroundColor: getGradeColor(product.grade) }}>
+                                            {product.grade}
                                         </div>
                                     </div>
-                                    <h4 className="fpc-name">{product.name}</h4>
-                                    <div className="fpc-signals">
-                                        <div className="signal-row">
-                                            <span className="signal-label">Demand</span>
-                                            <span className="signal-pill" style={{ color: getDemandColor(getDemandLevel(product)), background: `${getDemandColor(getDemandLevel(product))}18` }}>
-                                                {getDemandLevel(product)}
-                                                <span className="signal-score">{getDemandScore(product)}</span>
-                                            </span>
+
+                                    <div className="fpc-content-body">
+                                        <div className="fpc-header-row">
+                                            <h4 className="fpc-name">{product.name}</h4>
                                         </div>
-                                        <div className="signal-row">
-                                            <span className="signal-label">Competition</span>
-                                            <span className="signal-pill" style={{ color: getCompetitionColor(getCompetitionLevel(product)), background: `${getCompetitionColor(getCompetitionLevel(product))}18` }}>
-                                                {getCompetitionLevel(product)}
-                                            </span>
+
+                                        {/* Unified Score & Verdict */}
+                                        <div className="fpc-score-row" style={{ color: getGradeColor(product.grade) }}>
+                                            <span className="fpc-opp-score-big">{product.score}/100</span>
+                                            <span className="fpc-opp-verdict">({getPerformanceLabel(product.score)})</span>
                                         </div>
-                                        <div className="signal-row">
-                                            <span className="signal-label">Profit</span>
-                                            <span className="signal-pill" style={{ color: '#10b981', background: '#10b98118' }}>
-                                                {product.profitMargin}%
+
+                                        {/* Clean Signal Pills */}
+                                        <div className="fpc-signals-grid">
+                                            <span className="fpc-signal-pill" style={{ color: getDemandColor(getDemandLevel(product)), background: `${getDemandColor(getDemandLevel(product))}18` }}>
+                                                {getDemandLevel(product)} Demand
                                             </span>
-                                        </div>
-                                        <div className="signal-row">
-                                            <span className="signal-label">Trend</span>
-                                            <span className={`signal-pill trend-${product.trend}`}>
+                                            <span className="fpc-signal-pill" style={{ color: getCompetitionColor(getCompetitionLevel(product)), background: `${getCompetitionColor(getCompetitionLevel(product))}18` }}>
+                                                {getCompetitionLevel(product)} Comp
+                                            </span>
+                                            <span className="fpc-signal-pill profit-pill" style={{ color: '#10b981', background: '#10b98118' }}>
+                                                {product.profitMargin}% Profit
+                                            </span>
+                                            <span className={`fpc-signal-pill trend-pill trend-${product.trend}`}>
                                                 {product.trend === 'rising' ? '↑' : product.trend === 'declining' ? '↓' : '→'} {product.trend}
                                             </span>
                                         </div>
-                                    </div>
-                                    <div className="fpc-prices">
-                                        <span className="fpc-cost">${Number(product.price).toFixed(2)}</span>
-                                        <ArrowRight size={10} />
-                                        <span className="fpc-sell">${Number(product.sellPrice).toFixed(2)}</span>
+
+                                        <div className="fpc-prices">
+                                            <span className="fpc-cost">${Number(product.price).toFixed(2)} cost</span>
+                                            <ArrowRight size={12} className="price-arrow" />
+                                            <span className="fpc-sell">${Number(product.sellPrice).toFixed(2)} retail</span>
+                                        </div>
                                     </div>
                                 </div>
                             ))}

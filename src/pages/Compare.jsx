@@ -97,7 +97,12 @@ export default function Compare() {
                                 <Trophy size={12} /> Best Pick
                             </div>
                         )}
-                        <div className="cph-emoji">{p.image}</div>
+                        <div className="cph-emoji">
+                            {p.image?.startsWith('http') ? (
+                                <img src={p.image} alt={p.name} className="cph-img" onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} />
+                            ) : null}
+                            {!p.image?.startsWith('http') && <span>{p.image}</span>}
+                        </div>
                         <h3 className="cph-name">{p.name}</h3>
                         <span className="cph-category">{p.category}</span>
                         <div className="cph-grade-circle" style={{ '--grade-color': getGradeColor(p.analysis.grade) }}>

@@ -1,36 +1,127 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import {
-    LineChart, Line, AreaChart, Area, BarChart, Bar,
-    XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell
-} from 'recharts';
+import { useState, useEffect, useCallback } from 'react';
 import {
     TrendingUp, TrendingDown, AlertTriangle, CheckCircle, CheckCircle2,
     DollarSign, Target, Users, Zap, ShieldCheck,
-    MessageSquare, BarChart3, ArrowUpRight, ArrowDownRight, RefreshCw, Download,
-    Clock, Package, Loader2, XCircle, ChevronDown, ArrowUp, ArrowDown, Lock, Flame
+    ArrowUpRight, ArrowDownRight, RefreshCw, Download,
+    Clock, Package, Loader2, XCircle, ChevronDown, ArrowUp, ArrowDown, Lock,
+    Flame, Sparkles, ChevronRight, Tv, Activity, ShoppingCart, Star
 } from 'lucide-react';
 import { useLocation, useSearchParams } from 'react-router-dom';
-import { dailyAGrade, trendChartData, demandForecast, revenueData } from '../data/mockData';
+import { dailyAGrade } from '../data/mockData';
 import { gradeProduct, getGradeColor, getLetterGrade } from '../engine/gradingEngine';
 import { useAuth } from '../context/AuthContext';
 import { fetchMyProducts, gradeProductAPI, createCheckoutSession } from '../services/api';
 import './Dashboard.css';
 
-const CustomTooltip = ({ active, payload, label }) => {
-    if (active && payload && payload.length) {
-        return (
-            <div className="chart-tooltip">
-                <p className="tooltip-label">{label}</p>
-                {payload.map((p, i) => (
-                    <p key={i} style={{ color: p.color }}>
-                        {p.name}: {p.value}
-                    </p>
-                ))}
-            </div>
-        );
-    }
-    return null;
-};
+// ---- Derived helper functions ----
+function getDemandLevel(trendVelocity) {
+    if (trendVelocity > 70) return { label: 'High', color: '#10b981' };
+    if (trendVelocity > 40) return { label: 'Medium', color: '#f59e0b' };
+    return { label: 'Low', color: '#ef4444' };
+}
+
+function getCompetitionLevel(adCompetition) {
+    if (adCompetition > 65) return { label: 'High', color: '#ef4444' };
+    if (adCompetition > 35) return { label: 'Moderate', color: '#f59e0b' };
+    return { label: 'Low', color: '#10b981' };
+}
+
+function getSaturationLevel(marketSaturation) {
+    if (marketSaturation < 40) return { label: 'Low', color: '#10b981' };
+    if (marketSaturation < 65) return { label: 'Medium', color: '#f59e0b' };
+    return { label: 'High', color: '#ef4444' };
+}
+
+function getProfitLabel(profitMargin) {
+    if (profitMargin >= 60) return { label: 'Strong', color: '#10b981' };
+    if (profitMargin >= 35) return { label: 'Moderate', color: '#f59e0b' };
+    return { label: 'Weak', color: '#ef4444' };
+}
+
+function getTrendLabel(trendVelocity) {
+    if (trendVelocity >= 70) return { label: 'Rising', color: '#10b981', icon: '↑' };
+    if (trendVelocity >= 40) return { label: 'Stable', color: '#f59e0b', icon: '→' };
+    return { label: 'Declining', color: '#ef4444', icon: '↓' };
+}
+
+function getSupplierLabel(supplierReliability) {
+    if (supplierReliability >= 75) return { label: 'Reliable', color: '#10b981' };
+    if (supplierReliability >= 50) return { label: 'Average', color: '#f59e0b' };
+    return { label: 'Risky', color: '#ef4444' };
+}
+
+/**
+ * Determine the AI Verdict headline based on score
+ */
+function getAIVerdict(score, grade) {
+    if (score >= 85) return { emoji: '🔥', headline: 'HIGH POTENTIAL PRODUCT', color: '#10b981', confidence: Math.round(75 + (score - 85) * 1.3) };
+    if (score >= 70) return { emoji: '✅', headline: 'SOLID PRODUCT', color: '#06b6d4', confidence: Math.round(60 + (score - 70) * 1.5) };
+    if (score >= 55) return { emoji: '⚠️', headline: 'MODERATE OPPORTUNITY', color: '#f59e0b', confidence: Math.round(45 + (score - 55) * 1.0) };
+    return { emoji: '🚫', headline: 'HIGH RISK — AVOID', color: '#ef4444', confidence: Math.round(20 + score * 0.4) };
+}
+
+/**
+ * Generate AI reason bullets
+ */
+function getAIReasons(product, analysis) {
+    const reasons = [];
+    if (product.trendVelocity > 60) reasons.push({ ok: true, text: 'Demand rising on Google Trends' });
+    else if (product.trendVelocity < 40) reasons.push({ ok: false, text: 'Demand is declining or weak' });
+
+    if (product.adCompetition < 45) reasons.push({ ok: true, text: 'Competition still moderate' });
+    else if (product.adCompetition > 65) reasons.push({ ok: false, text: 'Market heavily saturated with ads' });
+
+    if (product.profitMargin > 50) reasons.push({ ok: true, text: 'Strong profit margin' });
+    else if (product.profitMargin < 30) reasons.push({ ok: false, text: 'Thin profit margin — risky' });
+
+    if (product.supplierReliability > 70) reasons.push({ ok: true, text: 'Supplier has strong reliability score' });
+    if (product.marketSaturation < 40) reasons.push({ ok: true, text: 'Low market saturation — early mover advantage' });
+    else if (product.marketSaturation > 65) reasons.push({ ok: false, text: 'Market saturation is high' });
+
+    return reasons.slice(0, 4);
+}
+
+/**
+ * Generate action plan based on product signals
+ */
+function getActionPlan(product, analysis) {
+    const category = product.category || 'General';
+    const sellPrice = product.sellPrice || Math.round((product.price || 15) * 2.8);
+    const budgetMin = product.adCompetition > 60 ? 150 : 80;
+    const budgetMax = budgetMin + 70;
+
+    // Determine best platform
+    const platform = product.trendVelocity > 65
+        ? 'TikTok Ads'
+        : product.adCompetition < 45
+            ? 'Facebook / Instagram'
+            : 'Google Shopping';
+
+    // Determine rough audience
+    const audienceMap = {
+        'Home Decor': '25–45 Home Enthusiasts',
+        'Electronics': '18–35 Tech Buyers',
+        'Beauty': '18–34 Beauty Enthusiasts',
+        'Fashion': '18–30 Fashion Buyers',
+        'Kitchen': '28–45 Home Cooks',
+        'Fitness': '20–40 Fitness Enthusiasts',
+        'Pet Supplies': '25–45 Pet Owners',
+        'Toys': '25–40 Parents',
+        'Baby': '25–35 New Parents',
+        'Health': '30–55 Health-Conscious Buyers',
+        'Garden': '35–60 Outdoor Lovers',
+        'Automotive': '25–50 Car Owners',
+    };
+    const audience = audienceMap[category] || '18–40 Online Shoppers';
+
+    const supplyRisk = product.supplierReliability < 50 ? 'High' : product.supplierReliability < 70 ? 'Medium' : 'Low';
+    const competitionGrowth = product.adCompetition > 60 ? 'High' : product.adCompetition > 35 ? 'Medium' : 'Low';
+    const seasonality = product.trendVelocity > 70
+        ? 'Year-round demand' : product.trendVelocity > 45
+            ? 'Stable' : 'Seasonal — plan carefully';
+
+    return { sellPrice, budgetMin, budgetMax, platform, audience, supplyRisk, competitionGrowth, seasonality };
+}
 
 export default function Dashboard() {
     const { isAuthenticated, refreshUser, user } = useAuth();
@@ -38,17 +129,14 @@ export default function Dashboard() {
     const location = useLocation();
     const [searchParams, setSearchParams] = useSearchParams();
 
-    // Detect ?upgrade=success and refresh user data from server
     useEffect(() => {
         if (searchParams.get('upgrade') === 'success') {
             refreshUser().then(() => {
-                // Clear the query param so it doesn't re-trigger
                 setSearchParams({}, { replace: true });
             });
         }
     }, [searchParams]);
 
-    // Get product from navigation state, fallback to dailyAGrade
     const incomingProduct = location.state?.product;
     const [product] = useState(incomingProduct || dailyAGrade);
     const [savedProducts, setSavedProducts] = useState([]);
@@ -65,8 +153,8 @@ export default function Dashboard() {
 
     const handleExportCSV = () => {
         const rows = [
-            ['Product Name', 'Grade', 'Score', 'Profit Margin', 'Trend Velocity', 'Ad Competition', 'CPC Forecast', 'Supplier Reliability', 'Review Sentiment', 'Market Saturation', 'Risk Level'],
-            [product.name, analysis.grade, analysis.score, product.profitMargin, product.trendVelocity, product.adCompetition, product.cpcForecast, product.supplierReliability, product.reviewSentiment, product.marketSaturation, analysis.risk.level]
+            ['Product Name', 'Grade', 'Score', 'Profit Margin', 'Trend Velocity', 'Ad Competition', 'CPC Forecast', 'Supplier Reliability', 'Review Sentiment', 'Market Saturation'],
+            [product.name, analysis.grade, analysis.score, product.profitMargin, product.trendVelocity, product.adCompetition, product.cpcForecast, product.supplierReliability, product.reviewSentiment, product.marketSaturation]
         ];
         const csv = rows.map(r => r.join(',')).join('\n');
         const blob = new Blob([csv], { type: 'text/csv' });
@@ -76,7 +164,7 @@ export default function Dashboard() {
         a.download = `${product.name.replace(/[^a-zA-Z0-9]/g, '_')}_grade.csv`;
         a.click();
         URL.revokeObjectURL(url);
-        showToast('CSV exported successfully!');
+        showToast('CSV exported!');
     };
 
     const loadSavedProducts = useCallback(async () => {
@@ -92,12 +180,10 @@ export default function Dashboard() {
         }
     }, [isAuthenticated]);
 
-    // Load saved products on mount
     useEffect(() => {
         loadSavedProducts();
     }, [loadSavedProducts]);
 
-    // Computed state to check if the current product is already saved
     const isSaved = savedProducts.some(p => p.productName === product.name);
 
     const handleSaveProduct = async () => {
@@ -115,10 +201,9 @@ export default function Dashboard() {
                 marketSaturation: product.marketSaturation,
             });
             await loadSavedProducts();
-            showToast(`${product.name} saved successfully!`, 'success');
+            showToast(`${product.name} saved!`, 'success');
         } catch (err) {
-            console.error('Failed to save product:', err);
-            showToast('Failed to save product. Please try again.', 'error');
+            showToast('Failed to save. Please try again.', 'error');
         } finally {
             setGrading(false);
         }
@@ -134,15 +219,16 @@ export default function Dashboard() {
         marketSaturation: product.marketSaturation,
     });
 
-    const riskPercentage = analysis.risk.score;
-    const saturationPercentage = product.marketSaturation;
+    const verdict = getAIVerdict(analysis.score, analysis.grade);
+    const reasons = getAIReasons(product, analysis);
+    const actionPlan = getActionPlan(product, analysis);
 
-    // Pro Insight values (computed from existing metrics)
-    const proInsights = {
-        demandMomentum: Math.round((product.trendVelocity * 0.7 + (100 - product.marketSaturation) * 0.3)),
-        commercialIntent: product.profitMargin > 60 ? 'High' : product.profitMargin > 35 ? 'Moderate' : 'Low',
-        competitionPressure: product.adCompetition > 65 ? 'High' : product.adCompetition > 35 ? 'Moderate' : 'Low',
-    };
+    const demand = getDemandLevel(product.trendVelocity);
+    const competition = getCompetitionLevel(product.adCompetition);
+    const saturation = getSaturationLevel(product.marketSaturation);
+    const profitLevel = getProfitLabel(product.profitMargin);
+    const trendLabel = getTrendLabel(product.trendVelocity);
+    const supplierLabel = getSupplierLabel(product.supplierReliability);
 
     const [upgrading, setUpgrading] = useState(false);
     const handleUpgrade = async () => {
@@ -172,10 +258,9 @@ export default function Dashboard() {
                 marketSaturation: product.marketSaturation,
             });
             await loadSavedProducts();
-            showToast(`${product.name} re-graded successfully!`, 'success');
+            showToast(`${product.name} re-graded!`, 'success');
         } catch (err) {
-            console.error('Re-grade failed:', err);
-            showToast('Re-grade failed. Please try again.', 'error');
+            showToast('Re-grade failed.', 'error');
         } finally {
             setRegrading(false);
         }
@@ -184,22 +269,12 @@ export default function Dashboard() {
     const formatDate = (dateStr) => {
         return new Date(dateStr).toLocaleDateString('en-US', {
             month: 'short', day: 'numeric', year: 'numeric',
-            hour: '2-digit', minute: '2-digit',
         });
     };
 
-    const metricsCards = [
-        { label: 'Profit Margin', value: `${product.profitMargin}%`, icon: DollarSign, color: '#10b981', change: '+5.2%', up: true },
-        { label: 'Competition Index', value: `${product.adCompetition}/100`, icon: Users, color: '#06b6d4', change: '-2.1%', up: false },
-        { label: 'Trend Momentum', value: `${product.trendVelocity}/100`, icon: TrendingUp, color: '#8b5cf6', change: '+12.4%', up: true },
-        { label: 'CPC Estimate', value: `$${(product.cpcForecast * 0.05).toFixed(2)}`, icon: Target, color: '#f59e0b', change: '+0.8%', up: true },
-        { label: 'Conversion Prob.', value: '3.2%', icon: Zap, color: '#ec4899', change: '+0.4%', up: true },
-        { label: 'Supplier Trust', value: `${product.supplierReliability}/100`, icon: ShieldCheck, color: '#10b981', change: '+1.0%', up: true },
-    ];
-
     return (
         <div className="dashboard-page">
-            {/* Top Bar */}
+            {/* ---- Header ---- */}
             <div className="dash-header animate-fade-in-up">
                 <div className="dash-header-left">
                     <div className="dash-product-icon">
@@ -213,8 +288,8 @@ export default function Dashboard() {
                         <h1 className="dash-product-name">{product.name}</h1>
                         <div className="dash-product-meta">
                             <span className="badge badge-info">{product.category}</span>
-                            <span className="badge badge-purple">{product.orders.toLocaleString()} orders</span>
-                            {isPro && <span className="badge badge-pro">🚀 Pro Plan Active — Unlimited Searches & Advanced Insights</span>}
+                            {product.orders && <span className="badge badge-purple">{product.orders.toLocaleString()} orders</span>}
+                            {isPro && <span className="badge badge-pro">🚀 Pro</span>}
                         </div>
                     </div>
                 </div>
@@ -233,251 +308,202 @@ export default function Dashboard() {
                         {regrading ? <Loader2 size={14} className="spin-icon" /> : <RefreshCw size={14} />}
                         {regrading ? 'Re-Grading...' : 'Re-Grade'}
                     </button>
-                    <button className="btn btn-secondary btn-sm" onClick={handleExportCSV}><Download size={14} /> Export</button>
+                    <button className="btn btn-secondary btn-sm" onClick={handleExportCSV}>
+                        <Download size={14} /> Export
+                    </button>
                 </div>
             </div>
 
-            {/* Grade + Risk + Saturation + ROI */}
-            <div className="dash-top-row animate-fade-in-up delay-1">
-                {/* Grade Badge */}
-                <div className="grade-card glass-card">
-                    <div className="grade-label">Overall Grade</div>
-                    <div className="grade-circle" style={{ '--grade-color': getGradeColor(analysis.grade) }}>
-                        <span className="grade-letter">{analysis.grade}</span>
-                    </div>
-                    <div className="grade-score">{analysis.score}/100</div>
-                    <div className="grade-tag" style={{ color: getGradeColor(analysis.grade) }}>
-                        {analysis.grade === 'A' ? 'Excellent' : analysis.grade === 'B' ? 'Good' : analysis.grade === 'C' ? 'Average' : 'Below Average'}
-                    </div>
-                </div>
-
-                {/* Risk Meter */}
-                <div className="risk-card glass-card">
-                    <div className="risk-label">Risk Level</div>
-                    <div className="risk-gauge">
-                        <svg viewBox="0 0 120 70" className="risk-svg">
-                            <path d="M10 65 A50 50 0 0 1 110 65" fill="none" stroke="var(--bg-tertiary)" strokeWidth="8" strokeLinecap="round" />
-                            <path d="M10 65 A50 50 0 0 1 110 65" fill="none" stroke={analysis.risk.color} strokeWidth="8" strokeLinecap="round"
-                                strokeDasharray={`${(riskPercentage / 100) * 157} 157`}
-                                style={{ transition: 'stroke-dasharray 1s ease' }}
-                            />
-                        </svg>
-                        <div className="risk-value" style={{ color: analysis.risk.color }}>
-                            {analysis.risk.level}
+            {/* ---- Opportunity Score Meter ---- */}
+            <div className="opp-meter-section animate-fade-in-up delay-1">
+                <div className="opp-meter-card glass-card">
+                    <div className="opp-meter-label-top">Opportunity Score</div>
+                    <div className="opp-meter-row">
+                        <div className="opp-grade-circle" style={{ '--grade-color': getGradeColor(analysis.grade) }}>
+                            <span className="opp-grade-letter">{analysis.grade}</span>
                         </div>
-                    </div>
-                    <div className="risk-score">{riskPercentage}% risk score</div>
-                </div>
-
-                {/* Saturation */}
-                <div className="saturation-card glass-card">
-                    <div className="sat-label">Market Saturation</div>
-                    <div className="sat-value">{saturationPercentage}%</div>
-                    <div className="meter-track">
-                        <div
-                            className={`meter-fill`}
-                            style={{
-                                width: `${saturationPercentage}%`,
-                                background: saturationPercentage < 40 ? 'var(--gradient-success)' :
-                                    saturationPercentage < 65 ? 'linear-gradient(90deg, #f59e0b, #f97316)' :
-                                        'var(--gradient-danger)'
-                            }}
-                        />
-                    </div>
-                    <div className="sat-status" style={{
-                        color: saturationPercentage < 40 ? '#10b981' : saturationPercentage < 65 ? '#f59e0b' : '#ef4444'
-                    }}>
-                        {saturationPercentage < 40 ? 'Low — Great opportunity' : saturationPercentage < 65 ? 'Moderate — Proceed carefully' : 'High — Risky market'}
-                    </div>
-                </div>
-
-                {/* ROI */}
-                <div className="roi-card glass-card">
-                    <div className="roi-label">Expected ROI</div>
-                    <div className="roi-value">
-                        {analysis.profitScenarios.likely.roi}%
-                        <ArrowUpRight size={20} className="roi-arrow" />
-                    </div>
-                    <div className="roi-scenarios">
-                        <div className="roi-scenario">
-                            <span className="rs-label">Best</span>
-                            <span className="rs-value" style={{ color: '#10b981' }}>{analysis.profitScenarios.best.roi}%</span>
+                        <div className="opp-score-meta">
+                            <div className="opp-score-big" style={{ color: getGradeColor(analysis.grade) }}>
+                                {analysis.score}<span className="opp-score-denom">/100</span>
+                            </div>
+                            <div className="opp-score-sublabel" style={{ color: getGradeColor(analysis.grade) }}>
+                                {analysis.grade === 'A' ? 'Excellent' : analysis.grade === 'B' ? 'Good' : analysis.grade === 'C' ? 'Average' : 'Below Average'}
+                            </div>
                         </div>
-                        <div className="roi-scenario">
-                            <span className="rs-label">Likely</span>
-                            <span className="rs-value" style={{ color: '#06b6d4' }}>{analysis.profitScenarios.likely.roi}%</span>
-                        </div>
-                        <div className="roi-scenario">
-                            <span className="rs-label">Worst</span>
-                            <span className="rs-value" style={{ color: '#ef4444' }}>{analysis.profitScenarios.worst.roi}%</span>
+                        <div className="opp-meter-track-wrap">
+                            <div className="opp-meter-labels">
+                                <span>0</span><span>25</span><span>50</span><span>75</span><span>100</span>
+                            </div>
+                            <div className="opp-meter-track">
+                                <div
+                                    className="opp-meter-fill"
+                                    style={{
+                                        width: `${analysis.score}%`,
+                                        background: `linear-gradient(90deg, ${getGradeColor(analysis.grade)}, ${getGradeColor(analysis.grade)}cc)`
+                                    }}
+                                />
+                                <div className="opp-meter-glow" style={{ left: `${analysis.score}%`, background: getGradeColor(analysis.grade) }} />
+                            </div>
+                            <div className="opp-meter-bar-label">Opportunity Meter</div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            {/* Pro Insights Card */}
-            <div className="pro-insight-section animate-fade-in-up delay-1">
-                <div className={`pro-insight-card glass-card ${!isPro ? 'pro-insight-locked' : ''}`}>
-                    <div className="pro-insight-header">
-                        <Flame size={16} className="pro-insight-icon" />
-                        <span className="pro-insight-title">{isPro ? 'Pro Insights' : 'Pro Insights Locked'}</span>
-                        {!isPro && <Lock size={14} className="pro-insight-lock" />}
+            {/* ---- Section 1: AI Verdict ---- */}
+            <div className="ai-verdict-section animate-fade-in-up delay-2">
+                <div className="ai-verdict-card glass-card" style={{ '--verdict-color': verdict.color }}>
+                    <div className="av-header">
+                        <div className="av-sparkle"><Sparkles size={16} /></div>
+                        <span className="av-section-label">AI Verdict</span>
                     </div>
-                    {isPro ? (
+                    <div className="av-headline-row">
+                        <span className="av-emoji">{verdict.emoji}</span>
+                        <div>
+                            <div className="av-headline" style={{ color: verdict.color }}>{verdict.headline}</div>
+                            <div className="av-confidence">Confidence: <strong>{verdict.confidence}%</strong></div>
+                        </div>
+                    </div>
+                    <div className="av-divider" />
+                    <div className="av-reasons-title">Why</div>
+                    <div className="av-reasons">
+                        {reasons.map((r, i) => (
+                            <div key={i} className={`av-reason ${r.ok ? 'ok' : 'bad'}`}>
+                                <span className="av-reason-dot">{r.ok ? '•' : '✗'}</span>
+                                {r.text}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+
+            {/* ---- Section 2: Product Intelligence Grid ---- */}
+            <div className="intelligence-section animate-fade-in-up delay-3">
+                <div className="glass-card">
+                    <div className="section-header">
+                        <Activity size={18} className="section-header-icon" />
+                        <h3 className="section-title">Product Intelligence Signals</h3>
+                    </div>
+                    <div className="signal-grid">
+                        {[
+                            { label: 'Demand', value: demand.label, color: demand.color, icon: TrendingUp, sub: `${product.trendVelocity}/100 trend score` },
+                            { label: 'Competition', value: competition.label, color: competition.color, icon: Users, sub: `${product.adCompetition}/100 ad density` },
+                            { label: 'Trend', value: `${trendLabel.icon} ${trendLabel.label}`, color: trendLabel.color, icon: TrendingUp, sub: 'Momentum direction' },
+                            { label: 'Profit Margin', value: `${profitLevel.label} (${product.profitMargin}%)`, color: profitLevel.color, icon: DollarSign, sub: 'After COGS estimate' },
+                            { label: 'Market Saturation', value: saturation.label, color: saturation.color, icon: Activity, sub: `${product.marketSaturation}% occupied` },
+                            { label: 'Supplier', value: supplierLabel.label, color: supplierLabel.color, icon: ShieldCheck, sub: `${product.supplierReliability}/100 reliability` },
+                            { label: 'Ad Cost', value: product.cpcForecast > 60 ? 'Expensive' : product.cpcForecast > 35 ? 'Moderate' : 'Affordable', color: product.cpcForecast > 60 ? '#ef4444' : product.cpcForecast > 35 ? '#f59e0b' : '#10b981', icon: Target, sub: `CPC index ${product.cpcForecast}/100` },
+                            { label: 'Review Score', value: product.reviewSentiment > 70 ? 'Positive' : product.reviewSentiment > 45 ? 'Mixed' : 'Negative', color: product.reviewSentiment > 70 ? '#10b981' : product.reviewSentiment > 45 ? '#f59e0b' : '#ef4444', icon: Star, sub: `${product.reviewSentiment}/100 sentiment` },
+                        ].map((sig, i) => (
+                            <div key={i} className="signal-tile glass-card-sm" style={{ '--sig-color': sig.color }}>
+                                <div className="sig-icon-wrap" style={{ background: `${sig.color}18`, color: sig.color }}>
+                                    <sig.icon size={16} />
+                                </div>
+                                <div className="sig-label">{sig.label}</div>
+                                <div className="sig-value" style={{ color: sig.color }}>{sig.value}</div>
+                                <div className="sig-sub">{sig.sub}</div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+
+            {/* ---- Section 3: Action Plan ---- */}
+            <div className="action-plan-section animate-fade-in-up delay-3">
+                <div className="glass-card action-plan-card">
+                    <div className="section-header">
+                        <Zap size={18} className="section-header-icon" style={{ color: '#f59e0b' }} />
+                        <h3 className="section-title">Action Plan</h3>
+                        <span className="section-subtitle">Your recommended launch strategy</span>
+                    </div>
+
+                    <div className="action-plan-grid">
+                        <div className="ap-tile ap-sell-price">
+                            <div className="ap-tile-label"><ShoppingCart size={14} /> Selling Price</div>
+                            <div className="ap-tile-value ap-price">${actionPlan.sellPrice}</div>
+                            <div className="ap-tile-sub">Recommended retail</div>
+                        </div>
+                        <div className="ap-tile ap-budget">
+                            <div className="ap-tile-label"><DollarSign size={14} /> Ad Budget</div>
+                            <div className="ap-tile-value">${actionPlan.budgetMin}–${actionPlan.budgetMax}</div>
+                            <div className="ap-tile-sub">Per week to start</div>
+                        </div>
+                        <div className="ap-tile ap-platform">
+                            <div className="ap-tile-label"><Tv size={14} /> Best Platform</div>
+                            <div className="ap-tile-value ap-platform-val">{actionPlan.platform}</div>
+                            <div className="ap-tile-sub">By demand signal</div>
+                        </div>
+                        <div className="ap-tile ap-audience">
+                            <div className="ap-tile-label"><Users size={14} /> Target Audience</div>
+                            <div className="ap-tile-value ap-audience-val">{actionPlan.audience}</div>
+                            <div className="ap-tile-sub">Core demographic</div>
+                        </div>
+                    </div>
+
+                    {/* Market Risk Section */}
+                    <div className="market-risk-section">
+                        <div className="mr-title">Market Risk Assessment</div>
+                        <div className="mr-grid">
+                            {[
+                                { label: 'Supply Risk', value: actionPlan.supplyRisk, color: actionPlan.supplyRisk === 'Low' ? '#10b981' : actionPlan.supplyRisk === 'Medium' ? '#f59e0b' : '#ef4444' },
+                                { label: 'Competition Growth', value: actionPlan.competitionGrowth, color: actionPlan.competitionGrowth === 'Low' ? '#10b981' : actionPlan.competitionGrowth === 'Medium' ? '#f59e0b' : '#ef4444' },
+                                { label: 'Seasonality', value: actionPlan.seasonality, color: '#06b6d4' },
+                            ].map((r, i) => (
+                                <div key={i} className="mr-row">
+                                    <span className="mr-label">{r.label}</span>
+                                    <span className="mr-value" style={{ color: r.color }}>{r.value}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* ---- Pro Upsell / AI Suggestions ---- */}
+            {!isPro ? (
+                <div className="pro-upsell-card glass-card animate-fade-in-up delay-4">
+                    <div className="pro-upsell-left">
+                        <Lock size={20} className="pro-upsell-lock" />
+                        <div>
+                            <div className="pro-upsell-title">Unlock Advanced AI Insights</div>
+                            <div className="pro-upsell-sub">Demand Momentum, Commercial Intent, and deeper competitor analysis — Pro only</div>
+                        </div>
+                    </div>
+                    <button className="btn btn-primary btn-sm" onClick={handleUpgrade} disabled={upgrading}>
+                        {upgrading ? <Loader2 size={14} className="spin-icon" /> : <Zap size={14} />}
+                        Upgrade to Pro
+                    </button>
+                </div>
+            ) : (
+                <div className="pro-insight-section animate-fade-in-up delay-4">
+                    <div className="glass-card pro-insight-card">
+                        <div className="pro-insight-header">
+                            <Flame size={16} className="pro-insight-icon" />
+                            <span className="pro-insight-title">Pro Insights</span>
+                        </div>
                         <div className="pro-insight-metrics">
                             <div className="pro-insight-metric">
                                 <span className="pim-label">Demand Momentum</span>
-                                <span className="pim-value">{proInsights.demandMomentum}/100</span>
+                                <span className="pim-value">{Math.round(product.trendVelocity * 0.7 + (100 - product.marketSaturation) * 0.3)}/100</span>
                             </div>
                             <div className="pro-insight-metric">
                                 <span className="pim-label">Commercial Intent</span>
-                                <span className={`pim-value pim-${proInsights.commercialIntent.toLowerCase()}`}>{proInsights.commercialIntent}</span>
+                                <span className={`pim-value pim-${product.profitMargin > 60 ? 'high' : product.profitMargin > 35 ? 'moderate' : 'low'}`}>
+                                    {product.profitMargin > 60 ? 'High' : product.profitMargin > 35 ? 'Moderate' : 'Low'}
+                                </span>
                             </div>
                             <div className="pro-insight-metric">
                                 <span className="pim-label">Competition Pressure</span>
-                                <span className={`pim-value pim-${proInsights.competitionPressure.toLowerCase()}`}>{proInsights.competitionPressure}</span>
+                                <span className={`pim-value pim-${product.adCompetition > 65 ? 'high' : product.adCompetition > 35 ? 'moderate' : 'low'}`}>
+                                    {product.adCompetition > 65 ? 'High' : product.adCompetition > 35 ? 'Moderate' : 'Low'}
+                                </span>
                             </div>
                         </div>
-                    ) : (
-                        <div className="pro-insight-locked-content">
-                            <div className="pro-insight-metrics pro-insight-placeholder">
-                                <div className="pro-insight-metric">
-                                    <span className="pim-label">Demand Momentum</span>
-                                    <span className="pim-value pim-hidden">——</span>
-                                </div>
-                                <div className="pro-insight-metric">
-                                    <span className="pim-label">Commercial Intent</span>
-                                    <span className="pim-value pim-hidden">——</span>
-                                </div>
-                                <div className="pro-insight-metric">
-                                    <span className="pim-label">Competition Pressure</span>
-                                    <span className="pim-value pim-hidden">——</span>
-                                </div>
-                            </div>
-                            <button className="btn btn-primary btn-sm pro-insight-upgrade-btn" onClick={handleUpgrade} disabled={upgrading}>
-                                {upgrading ? <Loader2 size={14} className="spin-icon" /> : <Zap size={14} />}
-                                Upgrade to unlock advanced intelligence
-                            </button>
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            {/* Metrics Grid */}
-            <div className="metrics-grid animate-fade-in-up delay-2">
-                {metricsCards.map((m, i) => (
-                    <div key={i} className="metric-card glass-card glass-card-sm">
-                        <div className="metric-header">
-                            <div className="metric-icon" style={{ background: `${m.color}18`, color: m.color }}>
-                                <m.icon size={18} />
-                            </div>
-                            <div className={`metric-change ${m.up ? 'up' : 'down'}`}>
-                                {m.up ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
-                                {m.change}
-                            </div>
-                        </div>
-                        <div className="metric-value">{m.value}</div>
-                        <div className="metric-label">{m.label}</div>
-                    </div>
-                ))}
-            </div>
-
-            {/* Charts Row */}
-            <div className="charts-row animate-fade-in-up delay-3">
-                {/* Trend Chart */}
-                <div className="chart-card glass-card">
-                    <div className="chart-header">
-                        <h3><TrendingUp size={16} /> Google Trend</h3>
-                    </div>
-                    <div className="chart-body">
-                        <ResponsiveContainer width="100%" height={240}>
-                            <AreaChart data={trendChartData}>
-                                <defs>
-                                    <linearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
-                                        <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
-                                    </linearGradient>
-                                </defs>
-                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                                <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-                                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-                                <Tooltip content={<CustomTooltip />} />
-                                <Area type="monotone" dataKey="interest" stroke="#8b5cf6" fill="url(#trendGradient)" strokeWidth={2} name="Interest" />
-                            </AreaChart>
-                        </ResponsiveContainer>
                     </div>
                 </div>
+            )}
 
-                {/* Competition Spike */}
-                <div className="chart-card glass-card">
-                    <div className="chart-header">
-                        <h3><Users size={16} /> Competition</h3>
-                    </div>
-                    <div className="chart-body">
-                        <ResponsiveContainer width="100%" height={240}>
-                            <AreaChart data={trendChartData}>
-                                <defs>
-                                    <linearGradient id="compGradient" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3} />
-                                        <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
-                                    </linearGradient>
-                                </defs>
-                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                                <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-                                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-                                <Tooltip content={<CustomTooltip />} />
-                                <Area type="monotone" dataKey="competition" stroke="#06b6d4" fill="url(#compGradient)" strokeWidth={2} name="Competition" />
-                            </AreaChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
-            </div>
-
-            {/* Bottom Charts */}
-            <div className="charts-row animate-fade-in-up delay-4">
-                {/* Revenue Breakdown */}
-                <div className="chart-card glass-card">
-                    <div className="chart-header">
-                        <h3><DollarSign size={16} /> Cost vs Revenue</h3>
-                    </div>
-                    <div className="chart-body">
-                        <ResponsiveContainer width="100%" height={240}>
-                            <BarChart data={revenueData} barSize={40}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                                <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-                                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} unit="$" />
-                                <Tooltip content={<CustomTooltip />} />
-                                <Bar dataKey="value" radius={[6, 6, 0, 0]} name="Amount">
-                                    {revenueData.map((entry, index) => (
-                                        <Cell key={index} fill={entry.fill} />
-                                    ))}
-                                </Bar>
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
-
-                {/* Demand Forecast */}
-                <div className="chart-card glass-card">
-                    <div className="chart-header">
-                        <h3><BarChart3 size={16} /> 30-Day Demand Forecast</h3>
-                    </div>
-                    <div className="chart-body">
-                        <ResponsiveContainer width="100%" height={240}>
-                            <LineChart data={demandForecast}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                                <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-                                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-                                <Tooltip content={<CustomTooltip />} />
-                                <Line type="monotone" dataKey="actual" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 4, fill: '#8b5cf6' }} name="Actual" connectNulls={false} />
-                                <Line type="monotone" dataKey="forecast" stroke="#06b6d4" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 4, fill: '#06b6d4' }} name="Forecast" />
-                            </LineChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
-            </div>
-
-            {/* Saved Products */}
+            {/* ---- Saved Products ---- */}
             <div className="saved-products-section animate-fade-in-up delay-4">
                 <div className="glass-card">
                     <div className="saved-header">
@@ -485,11 +511,7 @@ export default function Dashboard() {
                             <Package size={18} /> Your Saved Products
                         </h3>
                         {isAuthenticated && (
-                            <button
-                                className="btn btn-secondary btn-sm"
-                                onClick={loadSavedProducts}
-                                disabled={loadingSaved}
-                            >
+                            <button className="btn btn-secondary btn-sm" onClick={loadSavedProducts} disabled={loadingSaved}>
                                 <RefreshCw size={14} className={loadingSaved ? 'spin-icon' : ''} />
                                 Refresh
                             </button>
@@ -513,16 +535,12 @@ export default function Dashboard() {
                             <span>Grade a product to see it here</span>
                         </div>
                     ) : (() => {
-                        // Group saved products by productName, latest first
                         const groups = {};
                         savedProducts.forEach(sp => {
                             if (!groups[sp.productName]) groups[sp.productName] = [];
                             groups[sp.productName].push(sp);
                         });
-                        // Sort each group by version desc
                         Object.values(groups).forEach(arr => arr.sort((a, b) => b.version - a.version));
-
-                        // Sort groups by the newest createdAt across the whole group, then take top 5
                         const groupEntries = Object.entries(groups)
                             .sort((a, b) => new Date(b[1][0].createdAt) - new Date(a[1][0].createdAt))
                             .slice(0, 5);
@@ -584,7 +602,6 @@ export default function Dashboard() {
                                                     />
                                                 )}
                                             </div>
-                                            {/* Version History */}
                                             {isExpanded && hasHistory && (
                                                 <div className="sp-version-history">
                                                     {versions.slice(1).map(v => (
@@ -612,46 +629,7 @@ export default function Dashboard() {
                 </div>
             </div>
 
-            {/* AI Suggestions */}
-            <div className="suggestions-section animate-fade-in-up delay-5">
-                <div className="glass-card">
-                    <h3 className="suggestions-title">
-                        <Zap size={18} /> AI Insights & Suggestions
-                    </h3>
-                    <div className="suggestions-list">
-                        {analysis.suggestions.map((s, i) => (
-                            <div key={i} className="suggestion-item">
-                                <div className="suggestion-icon">
-                                    {i === 0 ? <CheckCircle size={16} /> : <AlertTriangle size={16} />}
-                                </div>
-                                <p>{s}</p>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                {/* Weak Metrics */}
-                {analysis.weakMetrics.length > 0 && (
-                    <div className="glass-card weak-metrics-card">
-                        <h3 className="suggestions-title">
-                            <AlertTriangle size={18} /> Flagged Weak Metrics
-                        </h3>
-                        <div className="weak-metrics-list">
-                            {analysis.weakMetrics.map((wm, i) => (
-                                <div key={i} className="weak-metric-item">
-                                    <span className="wm-name">{wm.name}</span>
-                                    <div className="wm-bar-track">
-                                        <div className="wm-bar-fill" style={{ width: `${wm.value}%`, background: 'var(--gradient-danger)' }} />
-                                    </div>
-                                    <span className="wm-value">{wm.value}/100</span>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-            </div>
-
-            {/* Toast Notification */}
+            {/* Toast */}
             <div className={`toast-container ${toast.visible ? 'visible' : ''}`}>
                 <div className={`toast toast-${toast.type}`}>
                     {toast.type === 'success' ? <CheckCircle2 size={16} /> : <XCircle size={16} />}

@@ -8,13 +8,13 @@ import verifyToken from './middleware/verifyToken.js';
 import Product from './models/Product.js';
 import User from './models/User.js';
 import { gradeProduct } from './engine/gradingEngine.js';
-import { generateProducts, getSignalStrength } from './engine/productGenerator.js';
 import { resetDailyQuotaIfNeeded } from './utils/quotaUtils.js';
 import TrendCache from './models/TrendCache.js';
 import AmazonCache from './models/AmazonCache.js';
 import { fetchTrendData } from './services/trendService.js';
 import { fetchAmazonProducts } from './services/amazonService.js';
 import { buildCandidateProducts } from './services/productCandidateService.js';
+import { correctKeyword } from './utils/spellChecker.js';
 import Stripe from 'stripe';
 
 // Conditionally initialize Stripe — don't crash if key is missing
@@ -112,17 +112,7 @@ const MONGO_URI = process.env.MONGO_URI;
 await mongoose.connect(MONGO_URI);
 console.log('✅ MongoDB connected');
 
-// ---- Fallback Trending Products (for /api/products/trending when no dynamic data) ----
-const fallbackProducts = [
-    { id: 1, name: 'LED Sunset Projection Lamp', image: '🌅', price: 12.99, sellPrice: 34.99, category: 'Home Decor', profitMargin: 73, trendVelocity: 88, adCompetition: 25, cpcForecast: 18, supplierReliability: 85, reviewSentiment: 91, marketSaturation: 20, shippingDays: 8, orders: 15420, trend: 'rising' },
-    { id: 2, name: 'Portable Neck Fan 3.0', image: '🌀', price: 5.50, sellPrice: 24.99, category: 'Electronics', profitMargin: 78, trendVelocity: 82, adCompetition: 35, cpcForecast: 22, supplierReliability: 88, reviewSentiment: 85, marketSaturation: 30, shippingDays: 10, orders: 28300, trend: 'rising' },
-    { id: 3, name: 'Smart Posture Corrector', image: '🧍', price: 8.20, sellPrice: 29.99, category: 'Health', profitMargin: 72, trendVelocity: 76, adCompetition: 42, cpcForecast: 28, supplierReliability: 80, reviewSentiment: 78, marketSaturation: 35, shippingDays: 12, orders: 9800, trend: 'stable' },
-    { id: 4, name: 'Mini Thermal Printer', image: '🖨️', price: 15.00, sellPrice: 44.99, category: 'Electronics', profitMargin: 67, trendVelocity: 70, adCompetition: 50, cpcForecast: 35, supplierReliability: 82, reviewSentiment: 80, marketSaturation: 40, shippingDays: 14, orders: 6200, trend: 'rising' },
-    { id: 5, name: 'Magnetic Phone Mount', image: '📱', price: 2.80, sellPrice: 19.99, category: 'Accessories', profitMargin: 86, trendVelocity: 45, adCompetition: 75, cpcForecast: 55, supplierReliability: 90, reviewSentiment: 70, marketSaturation: 72, shippingDays: 7, orders: 42100, trend: 'declining' },
-    { id: 6, name: 'Galaxy Star Projector', image: '🌌', price: 11.00, sellPrice: 39.99, category: 'Home Decor', profitMargin: 72, trendVelocity: 80, adCompetition: 38, cpcForecast: 25, supplierReliability: 78, reviewSentiment: 88, marketSaturation: 33, shippingDays: 10, orders: 18700, trend: 'rising' },
-    { id: 7, name: 'Electric Scalp Massager', image: '💆', price: 6.50, sellPrice: 27.99, category: 'Health', profitMargin: 77, trendVelocity: 55, adCompetition: 60, cpcForecast: 42, supplierReliability: 75, reviewSentiment: 72, marketSaturation: 55, shippingDays: 11, orders: 11400, trend: 'stable' },
-    { id: 8, name: 'Resin Fidget Cube Pro', image: '🎲', price: 3.20, sellPrice: 18.99, category: 'Toys', profitMargin: 83, trendVelocity: 30, adCompetition: 80, cpcForecast: 65, supplierReliability: 70, reviewSentiment: 55, marketSaturation: 78, shippingDays: 9, orders: 51200, trend: 'declining' },
-];
+// Fallbacks removed per strict real-data requirement.
 
 // ---- Auth Routes ----
 app.use('/api/auth', authRoutes);
@@ -136,35 +126,71 @@ const trendingKeywords = [
     'smart watch', 'hair tool', 'backpack', 'water bottle', 'resistance band',
 ];
 
-app.get('/api/products/trending', (req, res) => {
+app.get('/api/products/trending', async (req, res) => {
     try {
-        const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+        const today = new Date().toISOString().slice(0, 10);
         const dayHash = fnv1aSimple(today);
-        // Pick 2 keywords seeded by today's date
         const kw1 = trendingKeywords[dayHash % trendingKeywords.length];
         const kw2 = trendingKeywords[(dayHash + 7) % trendingKeywords.length];
-        // Use date-suffixed seed for variety, but clean keyword for display names
-        const batch1 = generateProducts(kw1 + '-' + today, 4).map(p => ({
-            ...p,
-            name: p.name.replace(/-\d{4}-\d{2}-\d{2}/g, '').trim(),
-        }));
-        const batch2 = generateProducts(kw2 + '-' + today, 4).map(p => ({
-            ...p,
-            name: p.name.replace(/-\d{4}-\d{2}-\d{2}/g, '').trim(),
-        }));
-        const products = [...batch1, ...batch2];
-        // Deduplicate by id and take top 8
+
+        // Try getting cached or fresh amazon results
+        let products = [];
+        const fetchAmazon = async (kw) => {
+            const cached = await AmazonCache.findOne({ keyword: kw.toLowerCase() });
+            if (cached && cached.products.length >= 3) return cached.products;
+            const fresh = await fetchAmazonProducts(kw);
+            if (fresh && fresh.length >= 3) {
+                const built = buildCandidateProducts(fresh, kw, 'Trending');
+                await AmazonCache.findOneAndUpdate({ keyword: kw.toLowerCase() }, { keyword: kw.toLowerCase(), products: built, fetchedAt: new Date() }, { upsert: true });
+                return built;
+            }
+            return null;
+        };
+
+        const fetchTrend = async (kw) => {
+            const normalized = kw.toLowerCase();
+            const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000);
+            const cached = await TrendCache.findOne({ keyword: normalized });
+            if (cached && cached.fetchedAt > sixHoursAgo) return cached;
+            const fresh = await fetchTrendData(normalized);
+            if (fresh) {
+                await TrendCache.findOneAndUpdate({ keyword: normalized }, { keyword: normalized, trendScore: fresh.trendScore, rawData: fresh.rawData, fetchedAt: fresh.fetchedAt }, { upsert: true, new: true });
+                return fresh;
+            }
+            return null;
+        };
+
+        const [p1, p2, t1, t2] = await Promise.all([
+            fetchAmazon(kw1),
+            fetchAmazon(kw2),
+            fetchTrend(kw1),
+            fetchTrend(kw2)
+        ]);
+
+        if (p1) products.push(...p1);
+        if (p2) products.push(...p2);
+
+        if (products.length === 0) {
+            return res.status(502).json({ error: 'Failed to fetch trending market data at this time.' });
+        }
+
         const seen = new Set();
         const unique = products.filter(p => {
-            if (seen.has(p.id)) return false;
-            seen.add(p.id);
+            if (seen.has(p.name)) return false;
+            seen.add(p.name);
             return true;
+        }).map(p => {
+            // Re-grade with real trend data
+            const trendScore = p.name.toLowerCase().includes(kw1.toLowerCase()) ? (t1?.trendScore || 50) : (t2?.trendScore || 50);
+            p.trendVelocity = trendScore;
+            const newGrade = gradeProduct(p);
+            return { ...p, score: newGrade.score, grade: newGrade.grade };
         }).slice(0, 8);
+
         res.json(unique);
     } catch (err) {
-        console.error('Trending error, using fallback:', err.message);
-        const enriched = fallbackProducts.map(p => ({ ...p, ...gradeProduct(p) }));
-        res.json(enriched);
+        console.error('Trending error:', err.message);
+        res.status(502).json({ error: 'Failed to load trending products.' });
     }
 });
 
@@ -178,19 +204,12 @@ function fnv1aSimple(str) {
     return hash >>> 0;
 }
 
-app.get('/api/products/search', (req, res) => {
-    const { q, niche, minMargin } = req.query;
-    let results = [...fallbackProducts];
-    if (q) results = results.filter(p => p.name.toLowerCase().includes(q.toLowerCase()));
-    if (niche && niche !== 'All Niches') results = results.filter(p => p.category === niche);
-    if (minMargin) results = results.filter(p => p.profitMargin >= Number(minMargin));
-    const enriched = results.map(p => ({ ...p, ...gradeProduct(p) }));
-    res.json(enriched);
+app.get('/api/products/search', async (req, res) => {
+    res.json([]); // Obsolete endpoint, returning empty array to fail gracefully
 });
 
-app.get('/api/grade/daily', (req, res) => {
-    const best = fallbackProducts.reduce((a, b) => (gradeProduct(a).score > gradeProduct(b).score ? a : b));
-    res.json({ ...best, ...gradeProduct(best) });
+app.get('/api/grade/daily', async (req, res) => {
+    res.status(404).json({ error: 'Daily grade no longer supported synthetically' });
 });
 
 app.get('/api/trends', (req, res) => {
@@ -219,7 +238,13 @@ app.post('/api/products/analyze', verifyToken, async (req, res) => {
             return res.status(400).json({ error: 'Keyword is required.' });
         }
 
-        const kw = keyword.trim();
+        let kw = keyword.trim();
+        const correctedKeyword = correctKeyword(kw);
+
+        // Use corrected word if spelling changed
+        if (correctedKeyword && correctedKeyword !== kw) {
+            kw = correctedKeyword;
+        }
 
         if (kw.length > 200) {
             return res.status(400).json({ error: 'Keyword must be under 200 characters.' });
@@ -253,8 +278,7 @@ app.post('/api/products/analyze', verifyToken, async (req, res) => {
             }
         }
 
-        // ---- Product Pipeline: Amazon (real) → Fallback (synthetic) ----
-        const signal = getSignalStrength(kw);
+        // ---- Product Pipeline: Amazon (real) ----
         let products;
         let usedAmazon = false;
 
@@ -272,8 +296,11 @@ app.post('/api/products/analyze', verifyToken, async (req, res) => {
                 // Fetch fresh from Amazon Best Sellers
                 const amazonResults = await fetchAmazonProducts(kw);
                 if (amazonResults && amazonResults.length >= 3) {
-                    const category = signal !== 'low' ? (amazonResults[0]?.category || 'Trending') : 'Trending';
+                    const isGF = amazonResults.some(r => r.isGeneralFallback);
+                    const category = isGF ? 'Trending' : (amazonResults[0]?.category || 'Trending');
                     products = buildCandidateProducts(amazonResults, kw, category);
+                    // Preserve the fallback flag on the built products
+                    if (isGF) products = products.map(p => ({ ...p, isGeneralFallback: true }));
                     usedAmazon = true;
 
                     // Cache the results
@@ -289,29 +316,31 @@ app.post('/api/products/analyze', verifyToken, async (req, res) => {
             console.warn('[Amazon] Pipeline failed, using fallback:', err.message);
         }
 
-        // Fallback to synthetic products if Amazon didn't deliver
         if (!products || products.length < 3) {
-            products = generateProducts(kw, 6);
-            console.log(`[Fallback] Using generated products for "${kw}"`);
+            // Amazon is down or blocked — return a clear message instead of crashing
+            return res.status(503).json({ error: 'Amazon data is temporarily unavailable. Please try again in a few minutes or try a more specific keyword (e.g. "wireless earbuds" instead of "tech").' });
         }
+
+        // Detect if results are general trending (no specific match for keyword)
+        const isGeneralFallback = products.some(p => p.isGeneralFallback);
 
         // ---- Google Trends Integration (Phase 6) ----
         try {
             const normalizedKeyword = kw.trim().toLowerCase();
             const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000);
 
-            // 1. Check cache
+            // 1. Check cache first (fast path)
             let cachedTrend = await TrendCache.findOne({ keyword: normalizedKeyword });
             let trendScore = null;
 
             if (cachedTrend && cachedTrend.fetchedAt > sixHoursAgo) {
                 trendScore = cachedTrend.trendScore;
+                console.log(`[Trends] Cache hit for "${normalizedKeyword}" → score ${trendScore}`);
             } else {
-                // 2. Fetch new
+                // 2. Try fresh fetch — may fail if Google is blocking
                 const freshTrend = await fetchTrendData(normalizedKeyword);
                 if (freshTrend) {
                     trendScore = freshTrend.trendScore;
-                    // Upsert cache
                     await TrendCache.findOneAndUpdate(
                         { keyword: normalizedKeyword },
                         {
@@ -325,13 +354,11 @@ app.post('/api/products/analyze', verifyToken, async (req, res) => {
                 }
             }
 
-            // 3. Inject score if we got one successfully
+            // 3. If we got a trend score, inject it; otherwise keep existing trendVelocity from Amazon data
             if (trendScore !== null) {
                 products = products.map(p => {
-                    p.trendVelocity = trendScore; // override the mock trend
-
-                    // Rekey the metrics Object
-                    const rawMetrics = {
+                    p.trendVelocity = trendScore;
+                    const newGrade = gradeProduct({
                         profitMargin: p.profitMargin,
                         trendVelocity: p.trendVelocity,
                         adCompetition: p.adCompetition,
@@ -339,22 +366,17 @@ app.post('/api/products/analyze', verifyToken, async (req, res) => {
                         supplierReliability: p.supplierReliability,
                         reviewSentiment: p.reviewSentiment,
                         marketSaturation: p.marketSaturation
-                    };
-
-                    const newGrade = gradeProduct(rawMetrics);
-                    return {
-                        ...p,
-                        score: newGrade.score,
-                        grade: newGrade.grade
-                    };
+                    });
+                    return { ...p, score: newGrade.score, grade: newGrade.grade };
                 });
-
-                // Re-sort because the scores shifted
                 products.sort((a, b) => b.score - a.score);
+            } else {
+                // Google Trends unavailable — continue with existing scores (graceful degradation)
+                console.warn(`[Trends] Unavailable for "${normalizedKeyword}" — using product-derived scores`);
             }
         } catch (trendErr) {
-            console.warn(`[Trends API] Safe fallback triggered. Error:`, trendErr.message);
-            // Fallback: silently proceed using original deterministic products.
+            // Trends threw an unexpected error — don't block the user, just log and continue
+            console.warn(`[Trends API] Unexpected error for "${kw}":`, trendErr.message);
         }
 
         // ---- Deduct quota (Phase 3) ----
@@ -381,7 +403,14 @@ app.post('/api/products/analyze', verifyToken, async (req, res) => {
                 baseLimit: FREE_BASE_LIMIT,
             };
 
-        res.json({ products, signal, quota });
+        const returnedCorrection = (correctedKeyword && correctedKeyword !== keyword.trim()) ? kw : null;
+        res.json({
+            products,
+            signal: 'high',
+            quota,
+            correctedKeyword: returnedCorrection,
+            isGeneralFallback,
+        });
     } catch (err) {
         console.error('Analyze error:', err.message);
         return res.status(500).json({ error: 'Failed to analyze products.' });
