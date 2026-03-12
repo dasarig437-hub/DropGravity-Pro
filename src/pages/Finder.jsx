@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
     Search, SlidersHorizontal, Upload, Link, Filter,
     ChevronDown, ChevronUp, ArrowRight,
@@ -9,6 +10,8 @@ import {
 import { getGradeColor } from '../engine/gradingEngine';
 import { analyzeProducts, fetchTrendingProducts, completeAd, createCheckoutSession } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import SkeletonGrid from '../components/SkeletonCard';
+import ProductIntelPanel from '../components/ProductIntelPanel';
 import './Finder.css';
 
 
@@ -71,6 +74,9 @@ export default function Finder() {
     });
     const [filters, setFilters] = useState({ ...DEFAULT_FILTERS });
     const incomingHandled = useRef(false);
+
+    // ---- Panel state ----
+    const [activeProduct, setActiveProduct] = useState(null);
 
     // ---- Quota state (Phase 4) ----
     const [quotaInfo, setQuotaInfo] = useState(null);
@@ -243,7 +249,15 @@ export default function Finder() {
     };
 
     // Client-side post-filters on API results
-    const filteredProducts = products.filter(p => {
+    const baseProducts = (!searched)
+        // Default view (no search) — only show B+ grades for credibility
+        ? products.filter(p => p.score >= 65).length >= 3
+            ? products.filter(p => p.score >= 65)
+            : [...products].sort((a, b) => b.score - a.score).slice(0, 6)
+        // Active search — show ALL results, user searched for them
+        : products;
+
+    const filteredProducts = baseProducts.filter(p => {
         const demand = getDemandLevel(p);
         const competition = getCompetitionLevel(p);
         if (filters.demand !== 'All' && demand !== filters.demand) return false;
@@ -395,6 +409,9 @@ export default function Finder() {
                 </div>
             </div>
 
+            {/* Main Layout: Content + AI Panel */}
+            <div className={`finder-main-layout ${activeProduct ? 'panel-open' : ''}`}>
+
             {/* Content Area */}
             <div className="finder-content animate-fade-in-up delay-2">
                 {/* Filter Toggle & View Mode */}
@@ -406,7 +423,9 @@ export default function Finder() {
                     </button>
                     <div className="finder-results-info">
                         <span>
-                            {loading ? 'Analyzing products...' : `${filteredProducts.length} products found`}
+                            {loading ? 'Analyzing products...'
+                                : searched ? `${filteredProducts.length} products found`
+                                    : `🔥 Top Opportunities — search to explore more`}
                         </span>
                     </div>
                     <div className="view-toggle">
@@ -427,77 +446,85 @@ export default function Finder() {
                 )}
 
                 <div className="finder-body">
-                    {/* Filters Panel */}
-                    {showFilters && (
-                        <div className="filters-panel glass-card animate-fade-in">
-                            <h3 className="filters-title"><Filter size={14} /> Filters</h3>
+                    {/* Filters Panel — Animated */}
+                    <AnimatePresence>
+                        {showFilters && (
+                            <motion.div
+                                className="filters-panel glass-card"
+                                initial={{ opacity: 0, height: 0, overflow: 'hidden' }}
+                                animate={{ opacity: 1, height: 'auto', overflow: 'visible' }}
+                                exit={{ opacity: 0, height: 0, overflow: 'hidden' }}
+                                transition={{ duration: 0.25, ease: [0.25, 0.46, 0.45, 0.94] }}
+                            >
+                                <h3 className="filters-title"><Filter size={14} /> Filters</h3>
 
-                            <div className="filter-group">
-                                <label className="filter-label">Demand</label>
-                                <div className="filter-pills">
-                                    {['All', 'High', 'Medium', 'Low'].map(v => (
-                                        <button key={v} className={`filter-pill ${filters.demand === v ? 'active' : ''}`}
-                                            onClick={() => setFilters({ ...filters, demand: v })}>{v}</button>
-                                    ))}
+                                <div className="filter-group">
+                                    <label className="filter-label">Demand</label>
+                                    <div className="filter-pills">
+                                        {['All', 'High', 'Medium', 'Low'].map(v => (
+                                            <button key={v} className={`filter-pill ${filters.demand === v ? 'active' : ''}`}
+                                                onClick={() => setFilters({ ...filters, demand: v })}>{v}</button>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
 
-                            <div className="filter-group">
-                                <label className="filter-label">Competition</label>
-                                <div className="filter-pills">
-                                    {['All', 'Low', 'Moderate', 'High'].map(v => (
-                                        <button key={v} className={`filter-pill ${filters.competition === v ? 'active' : ''}`}
-                                            onClick={() => setFilters({ ...filters, competition: v })}>{v}</button>
-                                    ))}
+                                <div className="filter-group">
+                                    <label className="filter-label">Competition</label>
+                                    <div className="filter-pills">
+                                        {['All', 'Low', 'Moderate', 'High'].map(v => (
+                                            <button key={v} className={`filter-pill ${filters.competition === v ? 'active' : ''}`}
+                                                onClick={() => setFilters({ ...filters, competition: v })}>{v}</button>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
 
-                            <div className="filter-group">
-                                <label className="filter-label">Profit Margin</label>
-                                <div className="filter-pills">
-                                    {['All', '30+', '50+', '70+'].map(v => (
-                                        <button key={v} className={`filter-pill ${filters.profit === v ? 'active' : ''}`}
-                                            onClick={() => setFilters({ ...filters, profit: v })}>{v === 'All' ? v : `${v}%`}</button>
-                                    ))}
+                                <div className="filter-group">
+                                    <label className="filter-label">Profit Margin</label>
+                                    <div className="filter-pills">
+                                        {['All', '30+', '50+', '70+'].map(v => (
+                                            <button key={v} className={`filter-pill ${filters.profit === v ? 'active' : ''}`}
+                                                onClick={() => setFilters({ ...filters, profit: v })}>{v === 'All' ? v : `${v}%`}</button>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
 
-                            <div className="filter-group">
-                                <label className="filter-label">Trend</label>
-                                <div className="filter-pills">
-                                    {['All', 'Rising', 'Stable', 'Declining'].map(v => (
-                                        <button key={v} className={`filter-pill ${filters.trend === v ? 'active' : ''}`}
-                                            onClick={() => setFilters({ ...filters, trend: v })}>{v}</button>
-                                    ))}
+                                <div className="filter-group">
+                                    <label className="filter-label">Trend</label>
+                                    <div className="filter-pills">
+                                        {['All', 'Rising', 'Stable', 'Declining'].map(v => (
+                                            <button key={v} className={`filter-pill ${filters.trend === v ? 'active' : ''}`}
+                                                onClick={() => setFilters({ ...filters, trend: v })}>{v}</button>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
 
-                            <div className="filter-group">
-                                <label className="filter-label">Price Range</label>
-                                <div className="filter-pills">
-                                    {['All', 'Under $30', '$30-$100', '$100+'].map(v => (
-                                        <button key={v} className={`filter-pill ${filters.price === v ? 'active' : ''}`}
-                                            onClick={() => setFilters({ ...filters, price: v })}>{v}</button>
-                                    ))}
+                                <div className="filter-group">
+                                    <label className="filter-label">Price Range</label>
+                                    <div className="filter-pills">
+                                        {['All', 'Under $30', '$30-$100', '$100+'].map(v => (
+                                            <button key={v} className={`filter-pill ${filters.price === v ? 'active' : ''}`}
+                                                onClick={() => setFilters({ ...filters, price: v })}>{v}</button>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
 
-                            <div className="filter-group">
-                                <label className="filter-label">Grade</label>
-                                <div className="filter-pills">
-                                    {['All', 'A', 'B', 'C', 'D'].map(v => (
-                                        <button key={v} className={`filter-pill ${filters.grade === v ? 'active' : ''}`}
-                                            onClick={() => setFilters({ ...filters, grade: v })}>{v}</button>
-                                    ))}
+                                <div className="filter-group">
+                                    <label className="filter-label">Grade</label>
+                                    <div className="filter-pills">
+                                        {['All', 'A', 'B', 'C', 'D'].map(v => (
+                                            <button key={v} className={`filter-pill ${filters.grade === v ? 'active' : ''}`}
+                                                onClick={() => setFilters({ ...filters, grade: v })}>{v}</button>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
 
-                            <button className="btn btn-secondary btn-sm" style={{ width: '100%' }}
-                                onClick={() => setFilters({ ...DEFAULT_FILTERS })}>
-                                <X size={14} /> Clear All
-                            </button>
-                        </div>
-                    )}
+                                <button className="btn btn-secondary btn-sm" style={{ width: '100%' }}
+                                    onClick={() => setFilters({ ...DEFAULT_FILTERS })}>
+                                    <X size={14} /> Clear All
+                                </button>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
 
                     {/* Quota Blocked Card (Phase 4) */}
                     {quotaBlocked && !isPro ? (
@@ -562,10 +589,8 @@ export default function Finder() {
                             )}
                         </div>
                     ) : loading ? (
-                        <div className="finder-empty-state">
-                            <Loader2 size={48} className="finder-empty-icon spin-icon" />
-                            <h3>Analyzing products...</h3>
-                            <p>Our AI engine is generating product insights</p>
+                        <div className="finder-loading-skeleton">
+                            <SkeletonGrid count={6} />
                         </div>
                     ) : filteredProducts.length === 0 ? (
                         <div className="finder-empty-state">
@@ -578,10 +603,14 @@ export default function Finder() {
                         </div>
                     ) : (
                         <div className={`finder-results ${viewMode}`}>
-                            {filteredProducts.map((product) => (
-                                <div key={product.id}
-                                    className={`finder-product-card glass-card ${viewMode === 'list' ? 'list-card' : ''} ${isInCompare(product.id) ? 'compare-selected' : ''}`}
-                                    onClick={() => navigate('/dashboard', { state: { product } })}
+                            {filteredProducts.map((product, idx) => (
+                                <motion.div
+                                    key={product.id}
+                                    initial={{ opacity: 0, y: 20 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ duration: 0.35, delay: idx * 0.06, ease: [0.25, 0.46, 0.45, 0.94] }}
+                                    className={`finder-product-card glass-card ${viewMode === 'list' ? 'list-card' : ''} ${isInCompare(product.id) ? 'compare-selected' : ''} ${activeProduct?.id === product.id ? 'active-card' : ''}`}
+                                    onClick={() => setActiveProduct(product)}
                                 >
                                     {/* Compare checkbox */}
                                     <button
@@ -637,30 +666,55 @@ export default function Finder() {
                                             <span className="fpc-sell">${Number(product.sellPrice).toFixed(2)} retail</span>
                                         </div>
                                     </div>
-                                </div>
+                                </motion.div>
                             ))}
                         </div>
                     )}
                 </div>
             </div>
 
-            {/* Compare Floating Bar */}
-            {compareList.length >= 2 && (
-                <div className="compare-floating-bar animate-fade-in-up">
-                    <div className="compare-bar-info">
-                        <GitCompareArrows size={18} />
-                        <span>{compareList.length} products selected</span>
-                    </div>
-                    <div className="compare-bar-actions">
-                        <button className="btn btn-secondary btn-sm" onClick={clearCompare}>
-                            Clear
-                        </button>
-                        <button className="btn btn-primary btn-sm" onClick={goToCompare}>
-                            Compare Now →
-                        </button>
-                    </div>
-                </div>
-            )}
+            {/* AI Intelligence Panel */}
+            <AnimatePresence>
+                {activeProduct && (
+                    <ProductIntelPanel
+                        product={activeProduct}
+                        onClose={() => setActiveProduct(null)}
+                        onCompare={(p) => {
+                            const fakeEvent = { stopPropagation: () => {} };
+                            toggleCompare(p, fakeEvent);
+                        }}
+                        isInCompare={activeProduct ? isInCompare(activeProduct.id) : false}
+                    />
+                )}
+            </AnimatePresence>
+
+            </div> {/* end finder-main-layout */}
+
+            {/* Compare Floating Bar — Animated */}
+            <AnimatePresence>
+                {compareList.length >= 2 && (
+                    <motion.div
+                        className="compare-floating-bar"
+                        initial={{ opacity: 0, y: 60 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 60 }}
+                        transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                    >
+                        <div className="compare-bar-info">
+                            <GitCompareArrows size={18} />
+                            <span>{compareList.length} products selected</span>
+                        </div>
+                        <div className="compare-bar-actions">
+                            <button className="btn btn-secondary btn-sm" onClick={clearCompare}>
+                                Clear
+                            </button>
+                            <button className="btn btn-primary btn-sm" onClick={goToCompare}>
+                                Compare Now →
+                            </button>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }

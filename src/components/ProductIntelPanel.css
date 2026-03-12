@@ -1,0 +1,514 @@
+/* =============================================
+   AI Product Intelligence Panel — JARVIS Style
+   ============================================= */
+
+/* ---- Panel Container ---- */
+.intel-panel {
+    width: 380px;
+    flex-shrink: 0;
+    height: calc(100vh - var(--topbar-height) - 48px);
+    position: sticky;
+    top: calc(var(--topbar-height) + 24px);
+    overflow-y: auto;
+    overflow-x: hidden;
+
+    /* Holographic glass */
+    background: rgba(8, 12, 24, 0.88);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-left: 1px solid rgba(6, 182, 212, 0.15);
+    border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+    box-shadow:
+        -8px 0 40px rgba(6, 182, 212, 0.06),
+        inset 0 0 60px rgba(6, 182, 212, 0.02);
+
+    /* Neon top accent */
+    border-top: 1px solid transparent;
+    border-image: linear-gradient(90deg, transparent 0%, rgba(6, 182, 212, 0.3) 50%, transparent 100%) 1;
+
+    display: flex;
+    flex-direction: column;
+}
+
+.intel-panel::-webkit-scrollbar { width: 3px; }
+.intel-panel::-webkit-scrollbar-thumb {
+    background: rgba(6, 182, 212, 0.2);
+    border-radius: 2px;
+}
+
+/* ---- Close Button ---- */
+.intel-close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: rgba(6, 182, 212, 0.08);
+    border: 1px solid rgba(6, 182, 212, 0.15);
+    color: rgba(6, 182, 212, 0.7);
+    z-index: 10;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.intel-close:hover {
+    background: rgba(6, 182, 212, 0.15);
+    color: #06b6d4;
+    border-color: rgba(6, 182, 212, 0.4);
+}
+
+/* ---- Header / Image ---- */
+.intel-header {
+    position: relative;
+    width: 100%;
+    padding: 24px 24px 16px;
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    border-bottom: 1px solid rgba(6, 182, 212, 0.08);
+}
+
+.intel-img-wrap {
+    width: 72px;
+    height: 72px;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    flex-shrink: 0;
+    background: rgba(6, 182, 212, 0.06);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(6, 182, 212, 0.1);
+}
+
+.intel-img-wrap img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.intel-img-wrap .intel-emoji {
+    font-size: 2.2rem;
+}
+
+.intel-header-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.intel-product-name {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.intel-category {
+    font-size: 0.72rem;
+    color: rgba(6, 182, 212, 0.6);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.intel-grade-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    font-size: 0.85rem;
+    font-weight: 800;
+    color: white;
+}
+
+/* ---- Scanning Line ---- */
+.intel-scan-bar {
+    position: relative;
+    width: 100%;
+    height: 2px;
+    background: rgba(6, 182, 212, 0.06);
+    overflow: hidden;
+}
+
+.intel-scan-bar.active .intel-scan-line {
+    animation: scanLine 0.6s ease-in-out;
+}
+
+.intel-scan-line {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 40%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, #06b6d4, rgba(139, 92, 246, 0.6), transparent);
+    border-radius: 2px;
+}
+
+@keyframes scanLine {
+    0%   { transform: translateX(-100%); opacity: 0; }
+    10%  { opacity: 1; }
+    90%  { opacity: 1; }
+    100% { transform: translateX(350%); opacity: 0; }
+}
+
+/* ---- Scanning Status ---- */
+.intel-status {
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+}
+
+.intel-status.scanning {
+    color: #06b6d4;
+}
+
+.intel-status.scanning .intel-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #06b6d4;
+    animation: statusPulse 1s ease-in-out infinite;
+}
+
+.intel-status.complete {
+    color: #10b981;
+}
+
+.intel-status.complete .intel-status-icon {
+    color: #10b981;
+}
+
+@keyframes statusPulse {
+    0%, 100% { opacity: 0.4; transform: scale(0.8); }
+    50%      { opacity: 1; transform: scale(1.2); }
+}
+
+/* ---- Body ---- */
+.intel-body {
+    padding: 0 24px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    flex: 1;
+}
+
+/* ---- Opportunity Score ---- */
+.intel-score-block {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px;
+    background: rgba(6, 182, 212, 0.04);
+    border: 1px solid rgba(6, 182, 212, 0.1);
+    border-radius: var(--radius-lg);
+    position: relative;
+    overflow: hidden;
+}
+
+.intel-score-circle {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+    font-weight: 800;
+    color: white;
+    flex-shrink: 0;
+    position: relative;
+}
+
+.intel-score-circle.glow-pulse {
+    animation: scorePulse 1.5s ease-out 1;
+}
+
+@keyframes scorePulse {
+    0%   { box-shadow: 0 0 0 0 rgba(6, 182, 212, 0.5); }
+    50%  { box-shadow: 0 0 20px 8px rgba(6, 182, 212, 0.25); }
+    100% { box-shadow: 0 0 0 0 rgba(6, 182, 212, 0); }
+}
+
+.intel-score-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.intel-score-value {
+    font-size: 1.5rem;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.intel-score-denom {
+    font-size: 0.85rem;
+    font-weight: 500;
+    opacity: 0.5;
+}
+
+.intel-score-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* ---- Signals Section ---- */
+.intel-signals-title {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: rgba(6, 182, 212, 0.5);
+    margin-bottom: -4px;
+}
+
+.intel-signals-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* Signal Row */
+.intel-signal-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: rgba(6, 182, 212, 0.04);
+    border: 1px solid rgba(6, 182, 212, 0.06);
+    border-radius: var(--radius-md);
+    transition: border-color 0.2s ease;
+}
+
+.intel-signal-row:hover {
+    border-color: rgba(6, 182, 212, 0.15);
+}
+
+.intel-signal-icon {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    flex-shrink: 0;
+    font-size: 0.8rem;
+}
+
+.intel-signal-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.intel-signal-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.intel-signal-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.intel-signal-value {
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+/* Animated Data Bar */
+.intel-bar-track {
+    width: 100%;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.intel-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    background: linear-gradient(90deg, #06b6d4, #8b5cf6);
+    transition: width 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    box-shadow: 0 0 6px rgba(6, 182, 212, 0.3);
+}
+
+/* ---- AI Verdict ---- */
+.intel-verdict {
+    padding: 14px 16px;
+    border-radius: var(--radius-lg);
+    border: 1px solid;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.intel-verdict-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.intel-verdict-emoji {
+    font-size: 1.5rem;
+    line-height: 1;
+}
+
+.intel-verdict-title {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.intel-verdict-headline {
+    font-size: 0.85rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.intel-verdict-confidence {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+}
+
+.intel-verdict-reasons {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.intel-verdict-reason {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    line-height: 1.4;
+}
+
+.intel-verdict-reason::before {
+    content: '•';
+    color: rgba(6, 182, 212, 0.6);
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+
+/* ---- Prices ---- */
+.intel-prices {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: rgba(6, 182, 212, 0.04);
+    border: 1px solid rgba(6, 182, 212, 0.06);
+    border-radius: var(--radius-md);
+}
+
+.intel-price-cost {
+    font-size: 0.85rem;
+    color: var(--text-tertiary);
+}
+
+.intel-price-arrow {
+    color: rgba(6, 182, 212, 0.4);
+}
+
+.intel-price-sell {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #10b981;
+}
+
+.intel-price-margin {
+    margin-left: auto;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #10b981;
+    background: rgba(16, 185, 129, 0.1);
+    padding: 3px 10px;
+    border-radius: var(--radius-full);
+}
+
+/* ---- Actions ---- */
+.intel-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: auto;
+    padding-top: 8px;
+}
+
+.intel-actions .btn { flex: 1; }
+
+.intel-btn-analyze {
+    background: linear-gradient(135deg, #06b6d4 0%, #8b5cf6 100%);
+    color: white;
+    box-shadow: 0 4px 15px rgba(6, 182, 212, 0.25);
+    border: none;
+}
+
+.intel-btn-analyze:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 25px rgba(6, 182, 212, 0.4);
+}
+
+.intel-btn-compare {
+    background: rgba(6, 182, 212, 0.06);
+    border: 1px solid rgba(6, 182, 212, 0.15);
+    color: #06b6d4;
+}
+
+.intel-btn-compare:hover {
+    background: rgba(6, 182, 212, 0.12);
+    border-color: rgba(6, 182, 212, 0.3);
+}
+
+.intel-btn-compare.active {
+    background: rgba(6, 182, 212, 0.15);
+    border-color: #06b6d4;
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 768px) {
+    .intel-panel {
+        width: 100%;
+        height: auto;
+        max-height: 80vh;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        top: auto;
+        border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+        border-left: none;
+        border-top: 1px solid rgba(6, 182, 212, 0.2);
+        z-index: 1000;
+    }
+}

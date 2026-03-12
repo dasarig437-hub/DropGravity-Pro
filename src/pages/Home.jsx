@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import {
     Search, ArrowRight, TrendingUp, Zap, BarChart3,
     Star, Clock, ShieldCheck, Target, Flame, ChevronRight,
@@ -8,6 +9,7 @@ import {
 import { dailyAGrade, marketSnapshot } from '../data/mockData';
 import { getGradeColor } from '../engine/gradingEngine';
 import { fetchTrendingProducts } from '../services/api';
+import SkeletonGrid from '../components/SkeletonCard';
 import './Home.css';
 
 export default function Home() {
@@ -182,8 +184,25 @@ export default function Home() {
                 </div>
 
                 <div className="trending-grid">
-                    {trendingProducts.slice(0, 6).map((product) => (
-                        <div key={product.id} className="product-card glass-card" onClick={() => goToProduct(product)}>
+                    {loadingTrending ? (
+                        <SkeletonGrid count={6} />
+                    ) : (() => {
+                        // Filter to B+ grades (score ≥ 65) for credibility
+                        let filtered = trendingProducts.filter(p => p.score >= 65);
+                        // If too few qualify, lower threshold to C (≥ 55)
+                        if (filtered.length < 3) filtered = trendingProducts.filter(p => p.score >= 55);
+                        // Fallback: if still too few, take the top 6 by score
+                        if (filtered.length < 3) filtered = [...trendingProducts].sort((a, b) => b.score - a.score);
+                        return filtered.slice(0, 6);
+                    })().map((product, idx) => (
+                        <motion.div
+                            key={product.id}
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.35, delay: idx * 0.07, ease: [0.25, 0.46, 0.45, 0.94] }}
+                            className="product-card glass-card"
+                            onClick={() => goToProduct(product)}
+                        >
                             <div className="pc-header">
                                 <div className="pc-emoji">
                                     {product.image?.startsWith('http') ? (
@@ -217,7 +236,7 @@ export default function Home() {
                                     {product.trend}
                                 </div>
                             </div>
-                        </div>
+                        </motion.div>
                     ))}
                 </div>
             </section>

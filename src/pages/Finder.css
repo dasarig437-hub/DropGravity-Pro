@@ -140,6 +140,34 @@
     color: white;
 }
 
+/* ---- Main Layout: Content + AI Panel ---- */
+.finder-main-layout {
+    display: flex;
+    gap: 0;
+    position: relative;
+}
+
+.finder-main-layout .finder-content {
+    flex: 1;
+    min-width: 0;
+    transition: flex 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Selected card glow */
+.finder-product-card.active-card {
+    border-color: rgba(6, 182, 212, 0.5) !important;
+    box-shadow: 0 0 20px rgba(6, 182, 212, 0.15),
+                0 0 40px rgba(6, 182, 212, 0.05) !important;
+    transform: scale(1.02);
+}
+
+/* Mobile: panel overlays */
+@media (max-width: 768px) {
+    .finder-main-layout {
+        flex-direction: column;
+    }
+}
+
 /* Body */
 .finder-body {
     display: flex;
@@ -216,9 +244,15 @@
 }
 
 .finder-product-card:hover {
-    transform: translateY(-3px);
+    transform: translateY(-4px) scale(1.01);
     box-shadow: var(--shadow-lg), var(--shadow-glow);
     border-color: var(--border-hover);
+}
+
+/* Skeleton loading wrapper */
+.finder-loading-skeleton {
+    flex: 1;
+    padding: 8px 0;
 }
 
 /* 1. Image Container (Top) */

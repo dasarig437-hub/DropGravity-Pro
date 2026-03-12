@@ -220,8 +220,19 @@ img {
 }
 
 .btn-primary:hover {
-  transform: translateY(-1px);
+  transform: translateY(-2px) scale(1.02);
   box-shadow: 0 6px 25px rgba(139, 92, 246, 0.45);
+}
+
+.btn-primary:active {
+  transform: translateY(0) scale(0.97);
+  transition-duration: 80ms;
+}
+
+.btn-secondary:active,
+.btn-ghost:active {
+  transform: scale(0.97);
+  transition-duration: 80ms;
 }
 
 .btn-secondary {
@@ -714,5 +725,16 @@ img {
 @media (max-width: 480px) {
   html {
     font-size: 14px;
+  }
+}
+
+/* --- Reduced Motion (Accessibility) --- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

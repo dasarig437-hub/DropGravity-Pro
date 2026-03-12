@@ -92,11 +92,18 @@ export default function Compare() {
             <div className="compare-grid animate-fade-in-up delay-1" style={{ '--cols': products.length }}>
                 {analyses.map((p, i) => (
                     <div key={i} className={`compare-product-header glass-card ${i === winnerIdx ? 'winner' : ''}`}>
-                        {i === winnerIdx && (
-                            <div className="winner-badge">
-                                <Trophy size={12} /> Best Pick
-                            </div>
-                        )}
+                        {i === winnerIdx && (() => {
+                            const s = p.analysis.score;
+                            const label = s >= 80 ? '⭐ Best Pick' : s >= 65 ? '↑ Better Option' : '📊 Higher Score';
+                            const color = s >= 80 ? '#10b981' : s >= 65 ? '#06b6d4' : '#f59e0b';
+                            const bg = s >= 80 ? 'rgba(16, 185, 129, 0.15)' : s >= 65 ? 'rgba(6, 182, 212, 0.15)' : 'rgba(245, 158, 11, 0.15)';
+                            const border = s >= 80 ? 'rgba(16, 185, 129, 0.3)' : s >= 65 ? 'rgba(6, 182, 212, 0.3)' : 'rgba(245, 158, 11, 0.3)';
+                            return (
+                                <div className="winner-badge" style={{ background: bg, color, border: `1px solid ${border}` }}>
+                                    {s >= 80 && <Trophy size={12} />} {label}
+                                </div>
+                            );
+                        })()}
                         <div className="cph-emoji">
                             {p.image?.startsWith('http') ? (
                                 <img src={p.image} alt={p.name} className="cph-img" onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} />

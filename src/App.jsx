@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { AnimatePresence } from 'framer-motion';
 import { useAuth } from './context/AuthContext';
 import Sidebar from './components/Sidebar';
 import Topbar from './components/Topbar';
+import PageTransition from './components/PageTransition';
 import Home from './pages/Home';
 import Dashboard from './pages/Dashboard';
 import Finder from './pages/Finder';
@@ -31,10 +33,12 @@ export default function App() {
 
     if (isAuthPage) {
         return (
-            <Routes>
-                <Route path="/login" element={<Login />} />
-                <Route path="/register" element={<Register />} />
-            </Routes>
+            <AnimatePresence mode="wait">
+                <Routes location={location} key={location.pathname}>
+                    <Route path="/login" element={<PageTransition><Login /></PageTransition>} />
+                    <Route path="/register" element={<PageTransition><Register /></PageTransition>} />
+                </Routes>
+            </AnimatePresence>
         );
     }
 
@@ -48,22 +52,24 @@ export default function App() {
             <div className={`main-area ${sidebarCollapsed ? 'collapsed' : ''}`}>
                 <Topbar collapsed={sidebarCollapsed} />
                 <div className="page-content">
-                    <Routes>
-                        <Route path="/" element={<Home />} />
-                        <Route path="/dashboard" element={
-                            <ProtectedRoute><Dashboard /></ProtectedRoute>
-                        } />
-                        <Route path="/finder" element={
-                            <ProtectedRoute><Finder /></ProtectedRoute>
-                        } />
-                        <Route path="/settings" element={
-                            <ProtectedRoute><SettingsPage /></ProtectedRoute>
-                        } />
-                        <Route path="/compare" element={
-                            <ProtectedRoute><Compare /></ProtectedRoute>
-                        } />
-                        <Route path="*" element={<Navigate to="/" replace />} />
-                    </Routes>
+                    <AnimatePresence mode="wait">
+                        <Routes location={location} key={location.pathname}>
+                            <Route path="/" element={<PageTransition><Home /></PageTransition>} />
+                            <Route path="/dashboard" element={
+                                <ProtectedRoute><PageTransition><Dashboard /></PageTransition></ProtectedRoute>
+                            } />
+                            <Route path="/finder" element={
+                                <ProtectedRoute><PageTransition><Finder /></PageTransition></ProtectedRoute>
+                            } />
+                            <Route path="/settings" element={
+                                <ProtectedRoute><PageTransition><SettingsPage /></PageTransition></ProtectedRoute>
+                            } />
+                            <Route path="/compare" element={
+                                <ProtectedRoute><PageTransition><Compare /></PageTransition></ProtectedRoute>
+                            } />
+                            <Route path="*" element={<Navigate to="/" replace />} />
+                        </Routes>
+                    </AnimatePresence>
                 </div>
             </div>
         </div>
