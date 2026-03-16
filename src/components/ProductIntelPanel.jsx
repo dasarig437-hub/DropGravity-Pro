@@ -1,407 +1,393 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-    X, ArrowRight, TrendingUp, Users, DollarSign,
-    Activity, ShieldCheck, Sparkles, GitCompareArrows,
-    ChevronRight, Zap, CheckCircle2
-} from 'lucide-react';
+import { X, Sparkles, GitCompareArrows, ChevronRight, ArrowRight } from 'lucide-react';
 import { getGradeColor } from '../engine/gradingEngine';
 import './ProductIntelPanel.css';
 
-// ---- Signal helpers ----
-function getDemandLevel(p) {
-    if (p.trendVelocity > 70) return { label: 'High', pct: Math.min(p.trendVelocity, 100), color: '#10b981' };
-    if (p.trendVelocity > 40) return { label: 'Medium', pct: Math.min(p.trendVelocity, 100), color: '#f59e0b' };
-    return { label: 'Low', pct: Math.max(p.trendVelocity, 10), color: '#ef4444' };
+// ---- Data helpers ----
+function getDemandInfo(p) {
+    const v = p.trendVelocity || 50;
+    if (v > 70) return { pct: Math.min(v, 100), label: 'High', color: '#00e5ff' };
+    if (v > 40) return { pct: Math.min(v, 100), label: 'Medium', color: '#f59e0b' };
+    return { pct: Math.max(v, 8), label: 'Low', color: '#ef4444' };
 }
-
-function getCompetitionLevel(p) {
+function getCompetitionInfo(p) {
     const avg = ((p.adCompetition || 50) + (p.marketSaturation || 50)) / 2;
-    if (avg > 60) return { label: 'High', pct: Math.min(avg, 100), color: '#ef4444' };
-    if (avg > 35) return { label: 'Moderate', pct: Math.min(avg, 100), color: '#f59e0b' };
-    return { label: 'Low', pct: Math.max(avg, 10), color: '#10b981' };
+    if (avg > 60) return { pct: Math.min(avg, 100), label: 'High', color: '#ef4444' };
+    if (avg > 35) return { pct: Math.min(avg, 100), label: 'Moderate', color: '#f59e0b' };
+    return { pct: Math.max(avg, 8), label: 'Low', color: '#00e5ff' };
 }
-
 function getTrendInfo(p) {
-    if (p.trendVelocity >= 70) return { label: '↑ Rising', pct: Math.min(p.trendVelocity, 100), color: '#10b981' };
-    if (p.trendVelocity >= 40) return { label: '→ Stable', pct: Math.min(p.trendVelocity, 100), color: '#f59e0b' };
-    return { label: '↓ Declining', pct: Math.max(p.trendVelocity, 10), color: '#ef4444' };
+    const v = p.trendVelocity || 50;
+    if (v >= 70) return { pct: Math.min(v, 100), label: 'Rising ↑', color: '#00e5ff' };
+    if (v >= 40) return { pct: Math.min(v, 100), label: 'Stable →', color: '#f59e0b' };
+    return { pct: Math.max(v, 8), label: 'Declining ↓', color: '#ef4444' };
+}
+function getSatInfo(p) {
+    const s = p.marketSaturation || 50;
+    if (s < 40) return { pct: Math.max(s, 8), label: 'Low', color: '#00e5ff' };
+    if (s < 65) return { pct: s, label: 'Medium', color: '#f59e0b' };
+    return { pct: Math.min(s, 100), label: 'High', color: '#ef4444' };
+}
+function getVerdict(score) {
+    if (score >= 85) return { tag: 'HIGH POTENTIAL PRODUCT', color: '#00e5ff', border: 'rgba(0,229,255,0.5)', bg: 'rgba(0,229,255,0.07)', detail: `Analyzed by JARVIS AI Protocol v4.1 — Optimal market fit detected. Predicted Growth: +${Math.round(score * 0.5)}%` };
+    if (score >= 70) return { tag: 'SOLID OPPORTUNITY', color: '#a855f7', border: 'rgba(168,85,247,0.5)', bg: 'rgba(168,85,247,0.07)', detail: 'Strong signals confirm viable entry point. Moderate competition advantage detected.' };
+    if (score >= 55) return { tag: 'MODERATE RISK', color: '#f59e0b', border: 'rgba(245,158,11,0.4)', bg: 'rgba(245,158,11,0.06)', detail: 'Mixed market signals. Careful positioning and pricing strategy required.' };
+    return { tag: 'HIGH RISK — AVOID', color: '#ef4444', border: 'rgba(239,68,68,0.4)', bg: 'rgba(239,68,68,0.06)', detail: 'Low demand and high saturation detected. Not recommended for current market.' };
+}
+function getScoreVerdict(score) {
+    if (score >= 85) return 'STRONG POTENTIAL';
+    if (score >= 70) return 'SOLID PICK';
+    if (score >= 55) return 'MODERATE';
+    return 'HIGH RISK';
 }
 
-function getSaturationInfo(p) {
-    const sat = p.marketSaturation || 50;
-    if (sat < 40) return { label: 'Low', pct: Math.max(sat, 10), color: '#10b981' };
-    if (sat < 65) return { label: 'Medium', pct: sat, color: '#f59e0b' };
-    return { label: 'High', pct: Math.min(sat, 100), color: '#ef4444' };
-}
-
-function getSupplierInfo(p) {
-    const rel = p.supplierReliability || 50;
-    if (rel > 70) return { label: 'Reliable', pct: Math.min(rel, 100), color: '#10b981' };
-    if (rel > 50) return { label: 'Average', pct: rel, color: '#f59e0b' };
-    return { label: 'Risky', pct: Math.max(rel, 10), color: '#ef4444' };
-}
-
-function getAIVerdict(score) {
-    if (score >= 85) return {
-        emoji: '🔥', headline: 'HIGH POTENTIAL PRODUCT', color: '#10b981',
-        confidence: Math.round(75 + (score - 85) * 1.3),
-        reasons: ['Strong demand rising on Google Trends', 'Competition still moderate — early mover advantage', 'High profit margin opportunity']
+// ---- Arc Score Gauge ----
+function ArcGauge({ score, grade, color, animated }) {
+    const S = 120;
+    const cx = S / 2, cy = S / 2, r = 46, sw = 7;
+    const startDeg = -220, sweep = 260;
+    const toRad = d => d * Math.PI / 180;
+    const pt = (deg) => ({
+        x: cx + r * Math.cos(toRad(deg)),
+        y: cy + r * Math.sin(toRad(deg)),
+    });
+    const arc = (from, to) => {
+        const s = pt(from), e = pt(to);
+        const large = Math.abs(to - from) > 180 ? 1 : 0;
+        return `M ${s.x} ${s.y} A ${r} ${r} 0 ${large} 1 ${e.x} ${e.y}`;
     };
-    if (score >= 70) return {
-        emoji: '✅', headline: 'SOLID OPPORTUNITY', color: '#06b6d4',
-        confidence: Math.round(60 + (score - 70) * 1.5),
-        reasons: ['Steady market demand detected', 'Reasonable competition level', 'Viable profit margins']
-    };
-    if (score >= 55) return {
-        emoji: '⚠️', headline: 'MODERATE RISK', color: '#f59e0b',
-        confidence: Math.round(45 + (score - 55) * 1.0),
-        reasons: ['Demand signals are mixed', 'Competition may be increasing', 'Profit margins require careful pricing']
-    };
-    return {
-        emoji: '🚫', headline: 'HIGH RISK', color: '#ef4444',
-        confidence: Math.round(20 + score * 0.4),
-        reasons: ['Low market demand detected', 'Saturated competition environment', 'Thin profit margins']
-    };
+    const endDeg = startDeg + (animated ? (score / 100) * sweep : 2);
+    return (
+        <svg width={S} height={S} viewBox={`0 0 ${S} ${S}`} style={{ overflow: 'visible' }}>
+            {/* Track */}
+            <path d={arc(startDeg, startDeg + sweep)} fill="none"
+                stroke="rgba(255,255,255,0.06)" strokeWidth={sw} strokeLinecap="round" />
+            {/* Fill */}
+            <path d={arc(startDeg, endDeg)} fill="none"
+                stroke={color} strokeWidth={sw} strokeLinecap="round"
+                style={{
+                    filter: `drop-shadow(0 0 8px ${color}) drop-shadow(0 0 16px ${color}60)`,
+                    transition: animated ? 'all 1.3s cubic-bezier(0.25,0.46,0.45,0.94)' : 'none',
+                }} />
+            {/* Grade */}
+            <text x={cx} y={cy - 8} textAnchor="middle" dominantBaseline="middle"
+                fill={color} fontSize="30" fontWeight="900" fontFamily="'Courier New', monospace"
+                style={{ filter: `drop-shadow(0 0 10px ${color})` }}>
+                {grade}
+            </text>
+            {/* Divider */}
+            <text x={cx} y={cy + 6} textAnchor="middle"
+                fill="rgba(255,255,255,0.3)" fontSize="10" fontFamily="'Courier New', monospace">/</text>
+            {/* Score */}
+            <text x={cx} y={cy + 20} textAnchor="middle" dominantBaseline="middle"
+                fill="rgba(255,255,255,0.9)" fontSize="16" fontWeight="800"
+                fontFamily="'Courier New', monospace">
+                {score}
+            </text>
+        </svg>
+    );
 }
 
-function getScoreLabel(score) {
-    if (score >= 90) return 'Excellent';
-    if (score >= 80) return 'Strong';
-    if (score >= 70) return 'Good';
-    if (score >= 60) return 'Moderate';
-    return 'Weak';
+// ---- Single Signal Bar Row ---- (matches Image 1: NAME ... BAR ... PCT | LABEL)
+function SignalRow({ name, pct, label, color, show, barWidth }) {
+    return (
+        <motion.div className="jp2-sig-row"
+            initial={{ opacity: 0, x: 12 }}
+            animate={show ? { opacity: 1, x: 0 } : { opacity: 0, x: 12 }}
+            transition={{ duration: 0.25, ease: [0.25, 0.46, 0.45, 0.94] }}>
+            <span className="jp2-sig-name">{name}</span>
+            <div className="jp2-sig-track">
+                <div className="jp2-sig-fill"
+                    style={{
+                        width: `${barWidth}%`,
+                        background: `linear-gradient(90deg, ${color}, ${color}70)`,
+                        boxShadow: `0 0 8px ${color}70`,
+                    }} />
+            </div>
+            <span className="jp2-sig-stat" style={{ color }}>
+                {Math.round(pct)}% <span className="jp2-sig-label">| {label}</span>
+            </span>
+        </motion.div>
+    );
 }
 
-// ---- Animation variants ----
-const panelVariants = {
+// ---- Hex Grid SVG Background ----
+function HexGrid() {
+    const hexes = [];
+    for (let row = 0; row < 8; row++) {
+        for (let col = 0; col < 6; col++) {
+            const x = col * 60 + (row % 2) * 30 + 10;
+            const y = row * 52 + 10;
+            const pts = Array.from({ length: 6 }, (_, k) => {
+                const a = (Math.PI / 3) * k - Math.PI / 6;
+                return `${x + 22 * Math.cos(a)},${y + 22 * Math.sin(a)}`;
+            }).join(' ');
+            hexes.push(<polygon key={`${row}-${col}`} points={pts}
+                fill="none" stroke="rgba(0,229,255,0.04)" strokeWidth="1" />);
+        }
+    }
+    return (
+        <svg className="jp2-hexbg" viewBox="0 0 400 500"
+            xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            {hexes}
+        </svg>
+    );
+}
+
+// ---- Panel variants ----
+const variants = {
     hidden: { x: '100%', opacity: 0 },
-    visible: {
-        x: 0,
-        opacity: 1,
-        transition: { type: 'spring', damping: 30, stiffness: 300 },
-    },
-    exit: {
-        x: '100%',
-        opacity: 0,
-        transition: { duration: 0.25, ease: [0.4, 0, 1, 1] },
-    },
+    visible: { x: 0, opacity: 1, transition: { type: 'spring', damping: 26, stiffness: 240 } },
+    exit: { x: '100%', opacity: 0, transition: { duration: 0.2, ease: [0.4, 0, 1, 1] } },
 };
 
-const signalVariants = {
-    hidden: { opacity: 0, y: 8 },
-    visible: { opacity: 1, y: 0 },
-};
-
-const verdictVariants = {
-    hidden: { opacity: 0, y: 12, scale: 0.97 },
-    visible: {
-        opacity: 1, y: 0, scale: 1,
-        transition: { duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] },
-    },
-};
-
-// ---- Component ----
+// ---- Main ----
 export default function ProductIntelPanel({ product, onClose, onCompare, isInCompare }) {
     const navigate = useNavigate();
-    const [phase, setPhase] = useState('scanning'); // scanning | revealing | complete
-    const [visibleSignals, setVisibleSignals] = useState(0);
-    const [barWidths, setBarWidths] = useState([0, 0, 0, 0, 0, 0]);
+    const [phase, setPhase] = useState('scanning');
+    const [gaugeOn, setGaugeOn] = useState(false);
+    const [visibleSigs, setVisibleSigs] = useState(0);
+    const [barWidths, setBarWidths] = useState([0, 0, 0, 0, 0]);
+    const [scanPct, setScanPct] = useState(0);
     const productIdRef = useRef(null);
     const timersRef = useRef([]);
 
-    // Build signal data
-    const demand = getDemandLevel(product);
-    const competition = getCompetitionLevel(product);
+    const demand = getDemandInfo(product);
+    const competition = getCompetitionInfo(product);
     const trend = getTrendInfo(product);
-    const profit = { label: `${product.profitMargin}%`, pct: Math.min(product.profitMargin, 100), color: '#10b981' };
-    const saturation = getSaturationInfo(product);
-    const supplier = getSupplierInfo(product);
-    const verdict = getAIVerdict(product.score);
+    const profit = { pct: Math.min(product.profitMargin, 100), label: product.profitMargin >= 50 ? 'High' : product.profitMargin >= 30 ? 'Medium' : 'Low', color: '#00e5ff' };
+    const saturation = getSatInfo(product);
+    const verdict = getVerdict(product.score);
     const gradeColor = getGradeColor(product.grade);
 
     const signals = [
-        { label: 'Demand', ...demand, icon: TrendingUp },
-        { label: 'Competition', ...competition, icon: Users },
-        { label: 'Trend', ...trend, icon: Activity },
-        { label: 'Profit', ...profit, icon: DollarSign },
-        { label: 'Saturation', ...saturation, icon: ShieldCheck },
-        { label: 'Supplier', ...supplier, icon: ShieldCheck },
+        { name: 'DEMAND', ...demand },
+        { name: 'COMPETITION', ...competition },
+        { name: 'TREND', ...trend },
+        { name: 'PROFIT MARGIN', ...profit },
+        { name: 'SATURATION', ...saturation },
     ];
 
-    // Clear all timers
     const clearTimers = useCallback(() => {
         timersRef.current.forEach(clearTimeout);
         timersRef.current = [];
     }, []);
 
-    // Animation state machine
     useEffect(() => {
         if (!product) return;
-
-        // Reset when product changes
-        const currentId = product.id;
-        if (productIdRef.current !== currentId) {
-            productIdRef.current = currentId;
+        const cid = product.id;
+        if (productIdRef.current !== cid) {
+            productIdRef.current = cid;
             clearTimers();
             setPhase('scanning');
-            setVisibleSignals(0);
-            setBarWidths([0, 0, 0, 0, 0, 0]);
+            setGaugeOn(false);
+            setVisibleSigs(0);
+            setBarWidths([0, 0, 0, 0, 0]);
+            setScanPct(0);
         }
-
         if (phase === 'scanning') {
-            // After 600ms scanning, start revealing
-            const t = setTimeout(() => {
-                if (productIdRef.current === currentId) {
-                    setPhase('revealing');
+            // progress bar 0→100 over ~900ms
+            let p = 0;
+            const tick = () => {
+                p = Math.min(p + 4, 100);
+                setScanPct(p);
+                if (p < 100) {
+                    const t = setTimeout(tick, 38);
+                    timersRef.current.push(t);
+                } else {
+                    const t = setTimeout(() => {
+                        if (productIdRef.current === cid) setPhase('revealing');
+                    }, 120);
+                    timersRef.current.push(t);
                 }
-            }, 600);
-            timersRef.current.push(t);
+            };
+            const t0 = setTimeout(tick, 80);
+            timersRef.current.push(t0);
         }
-
         if (phase === 'revealing') {
-            // Stagger signals with 200ms delay each
-            const targetWidths = signals.map(s => s.pct);
-            signals.forEach((_, i) => {
+            const tg = setTimeout(() => { if (productIdRef.current === cid) setGaugeOn(true); }, 100);
+            timersRef.current.push(tg);
+            signals.forEach((sig, i) => {
                 const t = setTimeout(() => {
-                    if (productIdRef.current !== currentId) return;
-                    setVisibleSignals(prev => Math.max(prev, i + 1));
-                    // Animate bar after signal appears
-                    const barTimer = setTimeout(() => {
-                        if (productIdRef.current !== currentId) return;
-                        setBarWidths(prev => {
-                            const next = [...prev];
-                            next[i] = targetWidths[i];
-                            return next;
-                        });
+                    if (productIdRef.current !== cid) return;
+                    setVisibleSigs(prev => Math.max(prev, i + 1));
+                    const bt = setTimeout(() => {
+                        if (productIdRef.current !== cid) return;
+                        setBarWidths(prev => { const n = [...prev]; n[i] = sig.pct; return n; });
                     }, 50);
-                    timersRef.current.push(barTimer);
-                }, i * 200);
+                    timersRef.current.push(bt);
+                }, 250 + i * 200);
                 timersRef.current.push(t);
             });
-
-            // After all signals, move to complete
-            const completeTimer = setTimeout(() => {
-                if (productIdRef.current === currentId) {
-                    setPhase('complete');
-                }
-            }, signals.length * 200 + 300);
-            timersRef.current.push(completeTimer);
+            const tc = setTimeout(() => {
+                if (productIdRef.current === cid) setPhase('complete');
+            }, 250 + signals.length * 200 + 250);
+            timersRef.current.push(tc);
         }
-
-        return () => {}; // cleanup handled via clearTimers
+        return () => clearTimers();
     }, [product?.id, phase]);
 
-    // ESC to close
     useEffect(() => {
-        const handleKey = (e) => { if (e.key === 'Escape') onClose(); };
-        document.addEventListener('keydown', handleKey);
-        return () => document.removeEventListener('keydown', handleKey);
+        const fn = e => { if (e.key === 'Escape') onClose(); };
+        document.addEventListener('keydown', fn);
+        return () => document.removeEventListener('keydown', fn);
     }, [onClose]);
 
-    // Cleanup on unmount
-    useEffect(() => {
-        return () => clearTimers();
-    }, [clearTimers]);
+    useEffect(() => () => clearTimers(), [clearTimers]);
 
-    const handleViewAnalysis = () => {
-        onClose();
-        navigate('/dashboard', { state: { product } });
-    };
+    const scanning = phase === 'scanning';
 
     return (
-        <motion.div
-            className="intel-panel"
-            variants={panelVariants}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-            key="intel-panel"
-        >
-            {/* Close */}
-            <button className="intel-close" onClick={onClose}>
-                <X size={14} />
-            </button>
+        <motion.div className="jp2-panel" variants={variants}
+            initial="hidden" animate="visible" exit="exit" key="jp2-panel">
 
-            {/* Header */}
-            <div className="intel-header">
-                <div className="intel-img-wrap">
-                    {product.image?.startsWith('http') ? (
-                        <img src={product.image} alt={product.name} />
-                    ) : (
-                        <span className="intel-emoji">{product.image}</span>
+            <HexGrid />
+
+            {/* HUD Corners */}
+            <div className="jp2-c jp2-c-tl" /><div className="jp2-c jp2-c-tr" />
+            <div className="jp2-c jp2-c-bl" /><div className="jp2-c jp2-c-br" />
+
+            {/* ── TOP STATUS BAR ── */}
+            <div className="jp2-topbar">
+                <div className="jp2-topbar-left">
+                    <span className={`jp2-dot ${scanning ? 'blink' : 'done'}`} />
+                    <span className="jp2-topbar-text">
+                        {scanning ? 'AI ACTIVE | ANALYZING...' : 'AI ACTIVE | ANALYSIS COMPLETE'}
+                    </span>
+                    {/* tick marks like in image */}
+                    <div className="jp2-ticks" aria-hidden="true">
+                        {Array.from({ length: 18 }, (_, i) => (
+                            <div key={i} className="jp2-tick"
+                                style={{ opacity: i < Math.round(scanPct / 100 * 18) ? 0.8 : 0.15 }} />
+                        ))}
+                    </div>
+                </div>
+                <button className="jp2-close" onClick={onClose} aria-label="Close"><X size={11} /></button>
+            </div>
+
+            {/* Scan progress line */}
+            <div className="jp2-scanbar">
+                <div className="jp2-scanfill" style={{ width: `${scanPct}%` }} />
+            </div>
+
+            {/* ── PANEL LABEL + PRODUCT NAME ── */}
+            <div className="jp2-header">
+                <div className="jp2-panel-label">AI INTELLIGENCE PANEL</div>
+                <h2 className="jp2-product-name">{product.name.toUpperCase()}</h2>
+            </div>
+
+            {/* ── MAIN BODY: IMAGE LEFT | SCORE RIGHT ── */}
+            <div className="jp2-main">
+
+                {/* Product image — holographic */}
+                <div className="jp2-img-col">
+                    <div className="jp2-img-box">
+                        {/* Hex pattern inside image box */}
+                        <div className="jp2-img-hex-overlay" aria-hidden="true" />
+                        {/* Scan line during scanning */}
+                        {scanning && <div className="jp2-img-scan" />}
+                        {/* Image */}
+                        <div className="jp2-img-inner">
+                            {product.image?.startsWith('http') ? (
+                                <img src={product.image} alt={product.name} className="jp2-img" />
+                            ) : (
+                                <span className="jp2-emoji">{product.image}</span>
+                            )}
+                        </div>
+                        {/* Holographic floor line */}
+                        <div className="jp2-img-floor" style={{ background: `linear-gradient(90deg, transparent, ${gradeColor}30, transparent)` }} />
+                        {/* Outer ring */}
+                        <div className="jp2-img-ring" style={{ borderColor: `${gradeColor}25` }} />
+                    </div>
+                    {/* Price row under image */}
+                    {phase !== 'scanning' && (
+                        <div className="jp2-price-row">
+                            <span className="jp2-price-cost">${Number(product.price).toFixed(2)}</span>
+                            <ArrowRight size={10} className="jp2-price-arr" />
+                            <span className="jp2-price-sell">${Number(product.sellPrice).toFixed(2)}</span>
+                            <span className="jp2-margin-badge">{product.profitMargin}%</span>
+                        </div>
                     )}
                 </div>
-                <div className="intel-header-info">
-                    <span className="intel-category">{product.category}</span>
-                    <h3 className="intel-product-name">{product.name}</h3>
-                    <span className="intel-grade-badge" style={{ backgroundColor: gradeColor }}>
-                        {product.grade}
-                    </span>
-                </div>
-            </div>
 
-            {/* Scanning Line */}
-            <div className={`intel-scan-bar ${phase === 'scanning' ? 'active' : ''}`}>
-                <div className="intel-scan-line" />
-            </div>
+                {/* Score + signals column */}
+                <div className="jp2-score-col">
+                    <div className="jp2-score-label">OPPORTUNITY SCORE</div>
+                    <div className="jp2-arc-wrap">
+                        <div className="jp2-arc-glow"
+                            style={{ background: `radial-gradient(circle, ${gradeColor}25 0%, transparent 65%)` }} />
+                        <ArcGauge score={product.score} grade={product.grade}
+                            color={gradeColor} animated={gaugeOn} />
+                    </div>
+                    <div className="jp2-score-verdict" style={{ color: gradeColor }}>
+                        {getScoreVerdict(product.score)}
+                    </div>
 
-            {/* Status */}
-            <div className={`intel-status ${phase === 'scanning' ? 'scanning' : 'complete'}`}>
-                {phase === 'scanning' ? (
-                    <>
-                        <div className="intel-status-dot" />
-                        <Zap size={12} />
-                        <span>Analyzing product...</span>
-                    </>
-                ) : (
-                    <>
-                        <CheckCircle2 size={12} className="intel-status-icon" />
-                        <span>Analysis Complete</span>
-                    </>
-                )}
-            </div>
+                    {/* Divider */}
+                    {phase !== 'scanning' && <div className="jp2-inner-divider" />}
 
-            <div className="intel-body">
-                {/* Opportunity Score */}
-                {phase !== 'scanning' && (
-                    <motion.div
-                        className="intel-score-block"
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ duration: 0.3 }}
-                    >
-                        <div
-                            className={`intel-score-circle ${phase === 'complete' ? 'glow-pulse' : ''}`}
-                            style={{ backgroundColor: gradeColor }}
-                        >
-                            {product.grade}
-                        </div>
-                        <div className="intel-score-info">
-                            <div className="intel-score-value" style={{ color: gradeColor }}>
-                                {product.score}<span className="intel-score-denom">/100</span>
-                            </div>
-                            <div className="intel-score-label" style={{ color: gradeColor }}>
-                                {getScoreLabel(product.score)}
-                            </div>
-                        </div>
-                    </motion.div>
-                )}
-
-                {/* Signals */}
-                {phase !== 'scanning' && (
-                    <div>
-                        <div className="intel-signals-title">Product Signals</div>
-                        <div className="intel-signals-list">
+                    {/* Signal bars */}
+                    {phase !== 'scanning' && (
+                        <div className="jp2-signals">
                             {signals.map((sig, i) => (
-                                <motion.div
-                                    key={sig.label}
-                                    className="intel-signal-row"
-                                    variants={signalVariants}
-                                    initial="hidden"
-                                    animate={i < visibleSignals ? 'visible' : 'hidden'}
-                                    transition={{ duration: 0.25, ease: [0.25, 0.46, 0.45, 0.94] }}
-                                    style={{ pointerEvents: i < visibleSignals ? 'auto' : 'none' }}
-                                >
-                                    <div
-                                        className="intel-signal-icon"
-                                        style={{ background: `${sig.color}15`, color: sig.color }}
-                                    >
-                                        <sig.icon size={14} />
-                                    </div>
-                                    <div className="intel-signal-info">
-                                        <div className="intel-signal-label-row">
-                                            <span className="intel-signal-label">{sig.label}</span>
-                                            <span className="intel-signal-value" style={{ color: sig.color }}>
-                                                {sig.label === 'Profit' ? `${product.profitMargin}%` : sig.value}
-                                            </span>
-                                        </div>
-                                        <div className="intel-bar-track">
-                                            <div
-                                                className="intel-bar-fill"
-                                                style={{ width: `${barWidths[i]}%` }}
-                                            />
-                                        </div>
-                                    </div>
-                                </motion.div>
+                                <SignalRow key={sig.name}
+                                    name={sig.name} pct={sig.pct}
+                                    label={sig.label} color={sig.color}
+                                    show={i < visibleSigs}
+                                    barWidth={barWidths[i] || 0} />
                             ))}
                         </div>
-                    </div>
-                )}
-
-                {/* AI Verdict */}
-                <AnimatePresence>
-                    {phase === 'complete' && (
-                        <motion.div
-                            className="intel-verdict"
-                            variants={verdictVariants}
-                            initial="hidden"
-                            animate="visible"
-                            exit="hidden"
-                            style={{
-                                background: `${verdict.color}08`,
-                                borderColor: `${verdict.color}25`,
-                            }}
-                        >
-                            <div className="intel-verdict-header">
-                                <span className="intel-verdict-emoji">{verdict.emoji}</span>
-                                <div className="intel-verdict-title">
-                                    <span className="intel-verdict-headline" style={{ color: verdict.color }}>
-                                        {verdict.headline}
-                                    </span>
-                                    <span className="intel-verdict-confidence">
-                                        Confidence: {verdict.confidence}%
-                                    </span>
-                                </div>
-                            </div>
-                            <div className="intel-verdict-reasons">
-                                {verdict.reasons.map((r, i) => (
-                                    <div key={i} className="intel-verdict-reason">{r}</div>
-                                ))}
-                            </div>
-                        </motion.div>
                     )}
-                </AnimatePresence>
+                </div>
+            </div>
 
-                {/* Prices */}
-                {phase !== 'scanning' && (
-                    <motion.div
-                        className="intel-prices"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: 0.2, duration: 0.3 }}
-                    >
-                        <span className="intel-price-cost">${Number(product.price).toFixed(2)}</span>
-                        <ArrowRight size={12} className="intel-price-arrow" />
-                        <span className="intel-price-sell">${Number(product.sellPrice).toFixed(2)}</span>
-                        <span className="intel-price-margin">{product.profitMargin}% margin</span>
-                    </motion.div>
-                )}
-
-                {/* Actions */}
+            {/* ── AI VERDICT ── */}
+            <AnimatePresence>
                 {phase === 'complete' && (
-                    <motion.div
-                        className="intel-actions"
+                    <motion.div className="jp2-verdict"
                         initial={{ opacity: 0, y: 8 }}
                         animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.1, duration: 0.3 }}
-                    >
-                        <button className="btn intel-btn-analyze" onClick={handleViewAnalysis}>
-                            <Sparkles size={14} />
-                            Full Analysis
-                            <ChevronRight size={14} />
-                        </button>
-                        {onCompare && (
-                            <button
-                                className={`btn intel-btn-compare ${isInCompare ? 'active' : ''}`}
-                                onClick={() => onCompare(product)}
-                            >
-                                <GitCompareArrows size={14} />
-                                {isInCompare ? 'Added' : 'Compare'}
-                            </button>
-                        )}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] }}
+                        style={{ background: verdict.bg, borderColor: verdict.border, boxShadow: `0 0 20px ${verdict.color}15` }}>
+                        <div className="jp2-verdict-label">AI VERDICT</div>
+                        <div className="jp2-verdict-tag"
+                            style={{ color: verdict.color, textShadow: `0 0 14px ${verdict.color}` }}>
+                            {verdict.tag}
+                        </div>
+                        <div className="jp2-verdict-detail">{verdict.detail}</div>
                     </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* ── ACTIONS ── */}
+            {phase === 'complete' && (
+                <motion.div className="jp2-actions"
+                    initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                    transition={{ delay: 0.2, duration: 0.3 }}>
+                    <button className="jp2-btn-analyze"
+                        onClick={() => { onClose(); navigate('/dashboard', { state: { product } }); }}>
+                        <Sparkles size={12} />FULL ANALYSIS<ChevronRight size={12} />
+                    </button>
+                    {onCompare && (
+                        <button className={`jp2-btn-compare ${isInCompare ? 'active' : ''}`}
+                            onClick={() => onCompare(product)}>
+                            <GitCompareArrows size={12} />
+                            {isInCompare ? 'ADDED ✓' : 'COMPARE'}
+                        </button>
+                    )}
+                </motion.div>
+            )}
+
+            {/* ── BOTTOM BAR ── */}
+            <div className="jp2-footer">
+                <span className="jp2-footer-left">AI ACTIVE | ANALYZING...</span>
+                {phase === 'complete' && (
+                    <span className="jp2-footer-right" style={{ color: '#a855f7' }}>
+                        PREDICTED GROWTH: +{Math.round(product.score * 0.45)}%
+                    </span>
                 )}
             </div>
         </motion.div>

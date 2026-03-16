@@ -14,6 +14,7 @@ import AmazonCache from './models/AmazonCache.js';
 import { fetchTrendData } from './services/trendService.js';
 import { fetchAmazonProducts } from './services/amazonService.js';
 import { buildCandidateProducts } from './services/productCandidateService.js';
+
 import { correctKeyword } from './utils/spellChecker.js';
 import Stripe from 'stripe';
 
@@ -213,20 +214,7 @@ app.get('/api/grade/daily', async (req, res) => {
 });
 
 app.get('/api/trends', (req, res) => {
-    res.json([
-        { day: 'Jan 1', interest: 30, competition: 10 },
-        { day: 'Jan 5', interest: 35, competition: 12 },
-        { day: 'Jan 10', interest: 42, competition: 15 },
-        { day: 'Jan 15', interest: 55, competition: 18 },
-        { day: 'Jan 20', interest: 68, competition: 22 },
-        { day: 'Jan 25', interest: 72, competition: 28 },
-        { day: 'Feb 1', interest: 80, competition: 30 },
-        { day: 'Feb 5', interest: 85, competition: 32 },
-        { day: 'Feb 10', interest: 78, competition: 35 },
-        { day: 'Feb 15', interest: 82, competition: 33 },
-        { day: 'Feb 20', interest: 90, competition: 36 },
-        { day: 'Feb 23', interest: 88, competition: 38 },
-    ]);
+    res.status(404).json({ error: 'Standalone trends endpoint removed — trend data is now embedded in product analysis responses.' });
 });
 
 // ---- Dynamic Product Analysis (AI-Simulated) ----
@@ -278,12 +266,11 @@ app.post('/api/products/analyze', verifyToken, async (req, res) => {
             }
         }
 
-        // ---- Product Pipeline: Amazon (real) ----
+        // ---- Product Pipeline: Amazon → Fallback Generator ----
         let products;
         let usedAmazon = false;
 
         try {
-            // Check 6-hour cache first
             const normalizedKw = kw.trim().toLowerCase();
             const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000);
             const cached = await AmazonCache.findOne({ keyword: normalizedKw });
@@ -293,17 +280,25 @@ app.post('/api/products/analyze', verifyToken, async (req, res) => {
                 products = cached.products;
                 usedAmazon = true;
             } else {
-                // Fetch fresh from Amazon Best Sellers
                 const amazonResults = await fetchAmazonProducts(kw);
                 if (amazonResults && amazonResults.length >= 3) {
                     const isGF = amazonResults.some(r => r.isGeneralFallback);
                     const category = isGF ? 'Trending' : (amazonResults[0]?.category || 'Trending');
-                    products = buildCandidateProducts(amazonResults, kw, category);
-                    // Preserve the fallback flag on the built products
+
+                    // Inject exact searched keyword as product #0 if Amazon didn't return it
+                    const kwWords = kw.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+                    const hasExactMatch = amazonResults.some(p =>
+                        kwWords.every(w => p.name.toLowerCase().includes(w))
+                    );
+                    const exactName = kw.trim().replace(/\b\w/g, c => c.toUpperCase());
+                    const enriched = hasExactMatch
+                        ? amazonResults
+                        : [{ name: exactName, price: null, rating: null, reviewCount: null, imageUrl: null, isExactMatch: true }, ...amazonResults];
+
+                    products = buildCandidateProducts(enriched, kw, category);
                     if (isGF) products = products.map(p => ({ ...p, isGeneralFallback: true }));
                     usedAmazon = true;
 
-                    // Cache the results
                     await AmazonCache.findOneAndUpdate(
                         { keyword: normalizedKw },
                         { keyword: normalizedKw, products, fetchedAt: new Date() },
@@ -313,12 +308,13 @@ app.post('/api/products/analyze', verifyToken, async (req, res) => {
                 }
             }
         } catch (err) {
-            console.warn('[Amazon] Pipeline failed, using fallback:', err.message);
+            console.warn('[Amazon] Pipeline failed, using fallback generator:', err.message);
         }
 
+        // Amazon failed or returned too few — no synthetic fallbacks, return error
         if (!products || products.length < 3) {
-            // Amazon is down or blocked — return a clear message instead of crashing
-            return res.status(503).json({ error: 'Amazon data is temporarily unavailable. Please try again in a few minutes or try a more specific keyword (e.g. "wireless earbuds" instead of "tech").' });
+            console.warn(`[Analyze] No real product data found for "${kw}"`);
+            return res.status(404).json({ error: `No products found for "${kw}". Try a different keyword.` });
         }
 
         // Detect if results are general trending (no specific match for keyword)

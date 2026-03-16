@@ -144,6 +144,7 @@ export default function Dashboard() {
     const [expandedGroups, setExpandedGroups] = useState({});
     const [grading, setGrading] = useState(false);
     const [regrading, setRegrading] = useState(false);
+    const [upgrading, setUpgrading] = useState(false);
     const [toast, setToast] = useState({ message: '', type: 'success', visible: false });
 
     const showToast = (message, type = 'success') => {
@@ -230,7 +231,7 @@ export default function Dashboard() {
     const trendLabel = getTrendLabel(product.trendVelocity);
     const supplierLabel = getSupplierLabel(product.supplierReliability);
 
-    const [upgrading, setUpgrading] = useState(false);
+
     const handleUpgrade = async () => {
         setUpgrading(true);
         try {

@@ -2,6 +2,7 @@ import express from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
+import verifyToken from '../middleware/verifyToken.js';
 
 const router = express.Router();
 
@@ -117,7 +118,7 @@ router.post('/login', async (req, res) => {
 /**
  * GET /api/auth/me — returns fresh user data from DB (used after plan upgrade)
  */
-import verifyToken from '../middleware/verifyToken.js';
+
 
 router.get('/me', verifyToken, async (req, res) => {
     try {

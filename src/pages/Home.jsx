@@ -6,7 +6,6 @@ import {
     Star, Clock, ShieldCheck, Target, Flame, ChevronRight,
     Globe, DollarSign, Sparkles, Loader2
 } from 'lucide-react';
-import { dailyAGrade, marketSnapshot } from '../data/mockData';
 import { getGradeColor } from '../engine/gradingEngine';
 import { fetchTrendingProducts } from '../services/api';
 import SkeletonGrid from '../components/SkeletonCard';
@@ -31,6 +30,32 @@ export default function Home() {
         };
         load();
     }, []);
+
+    // Derive "Daily A-Grade" from the highest-scoring trending product
+    const dailyAGrade = trendingProducts.length > 0
+        ? [...trendingProducts].sort((a, b) => b.score - a.score)[0]
+        : null;
+
+    // Derive market snapshot from live trending data
+    const getTopNiche = () => {
+        if (trendingProducts.length === 0) return '—';
+        const counts = trendingProducts.reduce((acc, p) => {
+            acc[p.category] = (acc[p.category] || 0) + 1;
+            return acc;
+        }, {});
+        return Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';
+    };
+
+    const marketSnapshot = {
+        risingProducts: trendingProducts.filter(p => p.trend === 'rising').length,
+        avgCPC: trendingProducts.length > 0
+            ? `$${(trendingProducts.reduce((sum, p) => sum + (p.cpcForecast || 35), 0) / trendingProducts.length * 0.03).toFixed(2)}`
+            : '$—',
+        topNiche: getTopNiche(),
+        demandIndex: trendingProducts.length > 0
+            ? Math.round(trendingProducts.reduce((sum, p) => sum + (p.trendVelocity || 50), 0) / trendingProducts.length)
+            : 0,
+    };
 
     const goToProduct = (product) => {
         navigate('/dashboard', { state: { product } });
@@ -121,11 +146,12 @@ export default function Home() {
             </section>
 
             {/* Daily A-Grade Product */}
+            {dailyAGrade && (
             <section className="daily-grade-section animate-fade-in-up delay-2">
                 <div className="section-header">
                     <div>
-                        <h2 className="section-title">🏆 Daily A-Grade Product</h2>
-                        <p className="section-subtitle">Top-rated product discovered today by our AI engine</p>
+                        <h2 className="section-title">🏆 Today's Top Product</h2>
+                        <p className="section-subtitle">Highest-scoring product from today's trending data</p>
                     </div>
                     <button className="btn btn-secondary btn-sm" onClick={() => goToProduct(dailyAGrade)}>
                         View Analysis <ChevronRight size={14} />
@@ -133,7 +159,7 @@ export default function Home() {
                 </div>
 
                 <div className="daily-card glass-card" onClick={() => goToProduct(dailyAGrade)}>
-                    <div className="daily-emoji">{dailyAGrade.image}</div>
+                    <div className="daily-emoji">{dailyAGrade.image?.startsWith('http') ? <img src={dailyAGrade.image} alt={dailyAGrade.name} className="daily-img" /> : dailyAGrade.image}</div>
                     <div className="daily-info">
                         <h3 className="daily-name">{dailyAGrade.name}</h3>
                         <div className="daily-meta">
@@ -152,11 +178,7 @@ export default function Home() {
                             </div>
                             <div className="daily-metric">
                                 <span className="dm-label">Competition</span>
-                                <span className="dm-value" style={{ color: '#10b981' }}>Low</span>
-                            </div>
-                            <div className="daily-metric">
-                                <span className="dm-label">Est. ROI</span>
-                                <span className="dm-value" style={{ color: '#f59e0b' }}>269%</span>
+                                <span className="dm-value" style={{ color: dailyAGrade.adCompetition > 60 ? '#ef4444' : '#10b981' }}>{dailyAGrade.adCompetition > 60 ? 'High' : dailyAGrade.adCompetition > 35 ? 'Moderate' : 'Low'}</span>
                             </div>
                         </div>
                     </div>
@@ -170,6 +192,7 @@ export default function Home() {
                     </div>
                 </div>
             </section>
+            )}
 
             {/* Trending Products */}
             <section className="trending-section animate-fade-in-up delay-3">
@@ -258,7 +281,7 @@ export default function Home() {
                             </span>
                             <div className="recent-info">
                                 <span className="recent-name">{product.name}</span>
-                                <span className="recent-time">2 hours ago</span>
+                                <span className="recent-time">Today</span>
                             </div>
                             <div className="recent-grade" style={{ color: getGradeColor(product.grade) }}>
                                 {product.grade}

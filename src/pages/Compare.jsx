@@ -33,7 +33,7 @@ export default function Compare() {
         if (products.length >= 2) {
             sessionStorage.setItem('compareProducts', JSON.stringify(products));
         }
-    }, []);
+    }, [products]);
 
     if (products.length < 2) {
         return (
@@ -106,9 +106,10 @@ export default function Compare() {
                         })()}
                         <div className="cph-emoji">
                             {p.image?.startsWith('http') ? (
-                                <img src={p.image} alt={p.name} className="cph-img" onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} />
-                            ) : null}
-                            {!p.image?.startsWith('http') && <span>{p.image}</span>}
+                                <img src={p.image} alt={p.name} className="cph-img" onError={e => { e.target.style.display = 'none'; }} />
+                            ) : (
+                                <span>{p.image || '📦'}</span>
+                            )}
                         </div>
                         <h3 className="cph-name">{p.name}</h3>
                         <span className="cph-category">{p.category}</span>

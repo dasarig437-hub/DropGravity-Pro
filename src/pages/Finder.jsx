@@ -127,8 +127,9 @@ export default function Finder() {
     useEffect(() => {
         const incomingKeyword = location.state?.keyword;
 
-        if (incomingKeyword && !incomingHandled.current) {
-            incomingHandled.current = true;
+        if (incomingKeyword) {
+            // Reset ref on new keyword so re-navigation works
+            incomingHandled.current = incomingKeyword;
             setSearchQuery(incomingKeyword);
             setSearched(true);
             setLoading(true);
@@ -139,7 +140,7 @@ export default function Finder() {
                 .catch(err => { console.error('Search failed:', err); setProducts([]); })
                 .finally(() => setLoading(false));
         } else if (!incomingHandled.current) {
-            incomingHandled.current = true;
+            incomingHandled.current = '__loaded__';
             setLoading(true);
             fetchTrendingProducts()
                 .then(data => setProducts(data))
@@ -173,7 +174,7 @@ export default function Finder() {
             setProducts([]);
         } finally {
             setLoading(false);
-            setTimeout(() => { searchDebounceRef.current = false; }, 300);
+            searchDebounceRef.current = false;
         }
     };
 

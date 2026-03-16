@@ -18,36 +18,59 @@ const WEIGHTS = {
  */
 export function calculateScore(metrics) {
     const normalized = {
+        // Direct: higher = better
         profitMargin: clamp(metrics.profitMargin || 0, 0, 100),
         trendVelocity: clamp(metrics.trendVelocity || 0, 0, 100),
-        adCompetition: clamp(100 - (metrics.adCompetition || 0), 0, 100), // Lower competition = better
-        cpcForecast: clamp(100 - (metrics.cpcForecast || 0), 0, 100), // Lower CPC = better
         supplierReliability: clamp(metrics.supplierReliability || 0, 0, 100),
         reviewSentiment: clamp(metrics.reviewSentiment || 0, 0, 100),
-        marketSaturation: clamp(100 - (metrics.marketSaturation || 0), 0, 100), // Lower saturation = better
+
+        // Inverse: lower = better
+        adCompetition: clamp(100 - (metrics.adCompetition || 50), 0, 100),
+        cpcForecast: clamp(100 - (metrics.cpcForecast || 50), 0, 100),
+        marketSaturation: clamp(100 - (metrics.marketSaturation || 50), 0, 100),
     };
 
-    let score = 0;
+    let raw = 0;
     for (const [key, weight] of Object.entries(WEIGHTS)) {
-        score += normalized[key] * weight;
+        raw += normalized[key] * weight;
     }
 
-    return Math.round(score * 10) / 10;
+    // Boost: raw score tends to cluster 40-65 for real products.
+    // Remap 30-100 raw → 45-100 display so average products land in C/B range.
+    const boosted = remapScore(raw);
+
+    return Math.round(boosted * 10) / 10;
+}
+
+/**
+ * Remap raw 0-100 score to a more useful display range.
+ * Raw 30 → display 45  (weak products don't all pile at D/F)
+ * Raw 60 → display 72  (average products become C/B)
+ * Raw 80 → display 88  (strong products become A/B)
+ * Raw 100 → display 100
+ */
+function remapScore(raw) {
+    // Simple linear remap: raw [20, 100] → display [40, 100]
+    const inMin = 20, inMax = 100;
+    const outMin = 40, outMax = 100;
+    const clamped = clamp(raw, inMin, inMax);
+    return outMin + ((clamped - inMin) / (inMax - inMin)) * (outMax - outMin);
 }
 
 /**
  * Convert numeric score to letter grade
+ * Realistic thresholds — average products should get B/C not D/F
  */
 export function getLetterGrade(score) {
-    if (score >= 90) return 'A';
-    if (score >= 80) return 'B';
-    if (score >= 70) return 'C';
-    if (score >= 60) return 'D';
-    return 'F';
+    if (score >= 82) return 'A';  // Top tier — genuinely excellent
+    if (score >= 68) return 'B';  // Good opportunity
+    if (score >= 54) return 'C';  // Moderate / proceed with caution
+    if (score >= 40) return 'D';  // Weak — significant issues
+    return 'F';                   // Avoid
 }
 
 /**
- * Get grade color class
+ * Get grade color
  */
 export function getGradeColor(grade) {
     const colors = {
@@ -87,11 +110,11 @@ export function gradeProduct(metrics) {
  */
 function assessRisk(metrics) {
     let riskScore = 0;
-    if (metrics.profitMargin < 30) riskScore += 30;
-    if (metrics.adCompetition > 70) riskScore += 25;
-    if (metrics.marketSaturation > 60) riskScore += 20;
-    if (metrics.supplierReliability < 50) riskScore += 15;
-    if (metrics.trendVelocity < 30) riskScore += 10;
+    if ((metrics.profitMargin || 0) < 30) riskScore += 30;
+    if ((metrics.adCompetition || 0) > 70) riskScore += 25;
+    if ((metrics.marketSaturation || 0) > 60) riskScore += 20;
+    if ((metrics.supplierReliability || 0) < 50) riskScore += 15;
+    if ((metrics.trendVelocity || 0) < 30) riskScore += 10;
 
     if (riskScore >= 60) return { level: 'High', score: riskScore, color: '#ef4444' };
     if (riskScore >= 30) return { level: 'Medium', score: riskScore, color: '#f59e0b' };
@@ -103,13 +126,13 @@ function assessRisk(metrics) {
  */
 function flagWeakMetrics(metrics) {
     const weak = [];
-    if (metrics.profitMargin < 40) weak.push({ name: 'Profit Margin', value: metrics.profitMargin, threshold: 40 });
-    if (metrics.trendVelocity < 40) weak.push({ name: 'Trend Velocity', value: metrics.trendVelocity, threshold: 40 });
-    if (metrics.adCompetition > 70) weak.push({ name: 'Ad Competition', value: metrics.adCompetition, threshold: 70, inverse: true });
-    if (metrics.cpcForecast > 60) weak.push({ name: 'CPC Cost', value: metrics.cpcForecast, threshold: 60, inverse: true });
-    if (metrics.supplierReliability < 50) weak.push({ name: 'Supplier Reliability', value: metrics.supplierReliability, threshold: 50 });
-    if (metrics.reviewSentiment < 50) weak.push({ name: 'Review Sentiment', value: metrics.reviewSentiment, threshold: 50 });
-    if (metrics.marketSaturation > 60) weak.push({ name: 'Market Saturation', value: metrics.marketSaturation, threshold: 60, inverse: true });
+    if ((metrics.profitMargin || 0) < 40) weak.push({ name: 'Profit Margin', value: metrics.profitMargin, threshold: 40 });
+    if ((metrics.trendVelocity || 0) < 40) weak.push({ name: 'Trend Velocity', value: metrics.trendVelocity, threshold: 40 });
+    if ((metrics.adCompetition || 0) > 70) weak.push({ name: 'Ad Competition', value: metrics.adCompetition, threshold: 70, inverse: true });
+    if ((metrics.cpcForecast || 0) > 60) weak.push({ name: 'CPC Cost', value: metrics.cpcForecast, threshold: 60, inverse: true });
+    if ((metrics.supplierReliability || 0) < 50) weak.push({ name: 'Supplier Reliability', value: metrics.supplierReliability, threshold: 50 });
+    if ((metrics.reviewSentiment || 0) < 50) weak.push({ name: 'Review Sentiment', value: metrics.reviewSentiment, threshold: 50 });
+    if ((metrics.marketSaturation || 0) > 60) weak.push({ name: 'Market Saturation', value: metrics.marketSaturation, threshold: 60, inverse: true });
     return weak;
 }
 
@@ -139,7 +162,7 @@ function generateSuggestions(grade, weakMetrics) {
                 suggestions.push('Mixed reviews detected. Verify product quality before scaling ad spend.');
                 break;
             case 'Market Saturation':
-                suggestions.push('Market is getting crowded. Differentiate with bundling or unique angle.');
+                suggestions.push('Market is getting crowded. Differentiate with bundling or a unique angle.');
                 break;
         }
     }
@@ -153,32 +176,29 @@ function generateSuggestions(grade, weakMetrics) {
  */
 function simulateProfit(metrics) {
     const baseRevenue = 100;
-    const margin = metrics.profitMargin / 100;
-    const cpcFactor = (100 - metrics.cpcForecast) / 100;
-    const conversionBase = 0.025; // 2.5% base conversion
+    const margin = (metrics.profitMargin || 30) / 100;
+    const cpcFactor = (100 - (metrics.cpcForecast || 50)) / 100;
 
-    const best = {
-        label: 'Best Case',
-        revenue: Math.round(baseRevenue * 1.3),
-        profit: Math.round(baseRevenue * 1.3 * margin * 1.1),
-        roi: Math.round((margin * 1.1 * cpcFactor * 1.2) * 300),
+    return {
+        best: {
+            label: 'Best Case',
+            revenue: Math.round(baseRevenue * 1.3),
+            profit: Math.round(baseRevenue * 1.3 * margin * 1.1),
+            roi: Math.round(margin * 1.1 * cpcFactor * 1.2 * 300),
+        },
+        likely: {
+            label: 'Likely Case',
+            revenue: Math.round(baseRevenue),
+            profit: Math.round(baseRevenue * margin),
+            roi: Math.round(margin * cpcFactor * 250),
+        },
+        worst: {
+            label: 'Worst Case',
+            revenue: Math.round(baseRevenue * 0.6),
+            profit: Math.round(baseRevenue * 0.6 * margin * 0.7),
+            roi: Math.round(margin * 0.7 * cpcFactor * 0.6 * 150),
+        },
     };
-
-    const likely = {
-        label: 'Likely Case',
-        revenue: Math.round(baseRevenue),
-        profit: Math.round(baseRevenue * margin),
-        roi: Math.round((margin * cpcFactor) * 250),
-    };
-
-    const worst = {
-        label: 'Worst Case',
-        revenue: Math.round(baseRevenue * 0.6),
-        profit: Math.round(baseRevenue * 0.6 * margin * 0.7),
-        roi: Math.round((margin * 0.7 * cpcFactor * 0.6) * 150),
-    };
-
-    return { best, likely, worst };
 }
 
 function clamp(val, min, max) {

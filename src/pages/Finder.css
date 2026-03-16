@@ -157,7 +157,7 @@
 .finder-product-card.active-card {
     border-color: rgba(6, 182, 212, 0.5) !important;
     box-shadow: 0 0 20px rgba(6, 182, 212, 0.15),
-                0 0 40px rgba(6, 182, 212, 0.05) !important;
+        0 0 40px rgba(6, 182, 212, 0.05) !important;
     transform: scale(1.02);
 }
 
@@ -887,4 +887,44 @@
     color: var(--text-primary);
     font-style: normal;
     font-weight: 600;
+}
+
+/* =============================================
+   Finder.css — Panel Layout Additions
+   Add these rules to your existing Finder.css
+   ============================================= */
+
+/* ---- Main Layout: Grid + AI Panel ---- */
+.finder-main-layout {
+    display: flex;
+    gap: 0;
+    align-items: flex-start;
+    width: 100%;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Content area flexes to fill remaining space */
+.finder-main-layout .finder-content {
+    flex: 1;
+    min-width: 0;
+    transition: flex 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ---- Active (selected) card styling ---- */
+.finder-product-card.active-card {
+    border-color: rgba(6, 182, 212, 0.5) !important;
+    box-shadow:
+        0 0 0 1px rgba(6, 182, 212, 0.2),
+        0 0 20px rgba(6, 182, 212, 0.12),
+        0 4px 24px rgba(6, 182, 212, 0.08) !important;
+    transform: scale(1.015) !important;
+}
+
+/* ---- Mobile: panel overlays full screen ---- */
+@media (max-width: 768px) {
+    .finder-main-layout.panel-open .finder-content {
+        /* Content stays visible underneath the bottom-sheet panel */
+        pointer-events: none;
+        opacity: 0.5;
+    }
 }

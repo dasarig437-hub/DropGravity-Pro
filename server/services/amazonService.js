@@ -24,6 +24,22 @@ const categoryPages = {
 const defaultPage = 'https://www.amazon.com/Best-Sellers/zgbs';
 
 /**
+ * Global rate limiter — ensures minimum 2s gap between Amazon requests.
+ * Prevents concurrent user searches from flooding Amazon with parallel requests.
+ */
+let lastAmazonRequest = 0;
+const MIN_REQUEST_GAP_MS = 2000;
+
+async function waitForRateLimit() {
+    const now = Date.now();
+    const elapsed = now - lastAmazonRequest;
+    if (elapsed < MIN_REQUEST_GAP_MS) {
+        await new Promise(resolve => setTimeout(resolve, MIN_REQUEST_GAP_MS - elapsed));
+    }
+    lastAmazonRequest = Date.now();
+}
+
+/**
  * Rotating User-Agent strings to reduce block risk.
  */
 const userAgents = [
@@ -143,6 +159,7 @@ export async function fetchAmazonProducts(keyword, retries = 2) {
 
         console.log(`[Amazon] Fetching: ${url} for keyword "${keyword}"`);
 
+        await waitForRateLimit();
         const { data: html } = await axios.get(url, {
             headers: {
                 'User-Agent': ua,
