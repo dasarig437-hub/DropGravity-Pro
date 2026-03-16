@@ -1,0 +1,54 @@
+# CodeRabbit configuration file
+# This file lets you customize how AI performs code reviews on Pull Requests.
+
+language: "en-US"
+# Set early_access to true if you want to test beta features.
+early_access: false
+
+reviews:
+  # General settings for PR reviews
+  profile: "software-engineer" # Can be: "software-engineer" or "security-engineer"
+  request_changes_workflow: false # If true, CodeRabbit will automatically Request Changes on bad code
+  
+  # Tone of the review
+  tone: "professional" # Can be: 'friendly', 'professional', 'critical'
+  
+  # High-level summary of the PR
+  summary:
+    enabled: true
+    # Provide a bulleted list of high level changes
+    components: true 
+  
+  # PR code walkthrough
+  walkthrough:
+    enabled: true
+
+  # Review line-by-line code
+  code_review:
+    enabled: true
+    # Focus on catching bugs, security issues, performance problems
+    focus: 
+      - "bugs"
+      - "security"
+      - "performance"
+      - "best-practices"
+
+  # Auto-reply to comments on PRs
+  auto_reply:
+    enabled: true
+
+# Custom Instructions
+# Here you can teach CodeRabbit about your codebase's specific patterns.
+chat:
+  auto_reply: true
+
+# Add custom instructions or "Skill" guidelines here so CodeRabbit enforces them in PRs
+instructions: |
+  You are reviewing code for "DropGravity Pro", a Node + React SPA SaaS product.
+  Please keep these specific rules in mind:
+  1. Frontend uses Vite + React + Tailwind CSS.
+  2. The UI follows a "Flat SaaS UI" design language. Do not suggest adding heavy drop-shadows or emojis as icons.
+  3. All new interactive components MUST have `cursor-pointer`.
+  4. Ensure all new images have `alt` text.
+  5. Avoid using default `var()` for raw colors where Tailwind utility classes (e.g., bg-primary) exist.
+  6. Pay attention to security on any API routes and ensure proper error handling is in place.
