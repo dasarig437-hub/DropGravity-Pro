@@ -155,7 +155,7 @@ app.get('/api/products/trending', async (req, res) => {
             if (cached && cached.fetchedAt > sixHoursAgo) return cached;
             const fresh = await fetchTrendData(normalized);
             if (fresh) {
-                await TrendCache.findOneAndUpdate({ keyword: normalized }, { keyword: normalized, trendScore: fresh.trendScore, rawData: fresh.rawData, fetchedAt: fresh.fetchedAt }, { upsert: true, new: true });
+                await TrendCache.findOneAndUpdate({ keyword: normalized }, { keyword: normalized, trendScore: fresh.trendScore, rawData: fresh.rawData, fetchedAt: fresh.fetchedAt }, { upsert: true, returnDocument: 'after' });
                 return fresh;
             }
             return null;
@@ -302,7 +302,7 @@ app.post('/api/products/analyze', verifyToken, async (req, res) => {
                     await AmazonCache.findOneAndUpdate(
                         { keyword: normalizedKw },
                         { keyword: normalizedKw, products, fetchedAt: new Date() },
-                        { upsert: true, new: true }
+                        { upsert: true, returnDocument: 'after' }
                     );
                     console.log(`[Amazon] Cached ${products.length} products for "${normalizedKw}"`);
                 }
@@ -345,7 +345,7 @@ app.post('/api/products/analyze', verifyToken, async (req, res) => {
                             rawData: freshTrend.rawData,
                             fetchedAt: freshTrend.fetchedAt
                         },
-                        { upsert: true, new: true }
+                        { upsert: true, returnDocument: 'after' }
                     );
                 }
             }
